@@ -76,6 +76,28 @@ def _evidence(row, thresholds):
             f"вход {amount}, выход {_number(row.out_kzt)} KZT.")
 
 
+def role_candidates(frame, thresholds):
+    """Shared rule predicates before precedence, for assignment and explanations."""
+    q75, q95 = thresholds["in_kzt_q75"], thresholds["betweenness_q95"]
+    boundary = frame["depth"].eq(4) & frame["out_deg"].eq(0)
+    non_seed = ~frame["is_seed"]
+    both = frame["in_deg"].gt(0) & frame["out_deg"].gt(0)
+    collection = non_seed & frame["in_deg"].ge(3) & frame["in_kzt"].ge(q75 if q75 is not None else np.inf)
+    candidates = {
+        "isolated": frame["in_deg"].eq(0) & frame["out_deg"].eq(0),
+        "boundary_consolidator": boundary & collection,
+        "boundary_unknown": boundary & ~collection,
+        "coordinator": non_seed & both & frame["seed_reach_count"].ge(2)
+                       & frame["betweenness"].ge(q95 if q95 is not None else np.inf),
+        "consolidator": ~boundary & collection & frame["in_deg"].ge(2 * frame["out_deg"].clip(lower=1)),
+        "distributor": frame["out_deg"].ge(5) & (frame["is_seed"] | frame["out_deg"].ge(2 * frame["in_deg"].clip(lower=1))),
+        "terminal": non_seed & frame["in_deg"].gt(0) & frame["out_deg"].eq(0) & frame["depth"].lt(4),
+        "transit": non_seed & both & frame["pass_through"].between(0.7, 1.3),
+        "fallback": pd.Series(True, index=frame.index),
+    }
+    return candidates
+
+
 def assign_roles(features_df):
     """Consume features joined to B's seed metrics on unique gid, return a copy.
 
@@ -104,21 +126,7 @@ def assign_roles(features_df):
         raise ValueError("Назначение ролей: truncated_by_depth не согласован с глубиной и выходом")
     thresholds = compute_role_thresholds(frame)
     q75, q95 = thresholds["in_kzt_q75"], thresholds["betweenness_q95"]
-    non_seed = ~frame["is_seed"]
-    both = frame["in_deg"].gt(0) & frame["out_deg"].gt(0)
-    collection = non_seed & frame["in_deg"].ge(3) & frame["in_kzt"].ge(q75 if q75 is not None else np.inf)
-    candidates = {
-        "isolated": frame["in_deg"].eq(0) & frame["out_deg"].eq(0),
-        "boundary_consolidator": boundary & collection,
-        "boundary_unknown": boundary & ~collection,
-        "coordinator": non_seed & both & frame["seed_reach_count"].ge(2)
-                       & frame["betweenness"].ge(q95 if q95 is not None else np.inf),
-        "consolidator": ~boundary & collection & frame["in_deg"].ge(2 * frame["out_deg"].clip(lower=1)),
-        "distributor": frame["out_deg"].ge(5) & (frame["is_seed"] | frame["out_deg"].ge(2 * frame["in_deg"].clip(lower=1))),
-        "terminal": non_seed & frame["in_deg"].gt(0) & frame["out_deg"].eq(0) & frame["depth"].lt(4),
-        "transit": non_seed & both & frame["pass_through"].between(0.7, 1.3),
-        "fallback": pd.Series(True, index=frame.index),
-    }
+    candidates = role_candidates(frame, thresholds)
     collector_score = 0.55 + 0.15 * _excess(frame["in_deg"], 3) + 0.15 * _excess(frame["in_kzt"], q75)
     scores = {
         "isolated": 0.10,

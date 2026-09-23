@@ -59,6 +59,8 @@ def main(data_dir: Path, out_dir: Path) -> None:
     with_clusters = _merge_nodes(roles, clusters, "clusters")
     with_clusters = _merge_nodes(with_clusters, stability_nodes, "cluster stability")
     scored = compute_priority(with_clusters)
+    from pipeline.priority_sensitivity import analyze_priority_sensitivity
+    priority_sensitivity = analyze_priority_sensitivity(scored)
     temporal_nodes, temporal_report = analyze_temporal(nodes, transactions, scored)
     scored = _merge_nodes(scored, temporal_nodes, "temporal patterns")
     network_report = analyze_routes(graph, transactions, scored)
@@ -80,6 +82,7 @@ def main(data_dir: Path, out_dir: Path) -> None:
         "role_candidate_counts": candidate_counts,
         "cluster_seed": 42,
         "cluster_stability": stability_diagnostics,
+        "priority_sensitivity": priority_sensitivity,
         "bonus_reports": ["temporal_patterns.json", "network_patterns.json"],
         "nodes": len(nodes), "edges": len(edges), "transactions": len(transactions),
         "duration_seconds": round(perf_counter() - started, 3),

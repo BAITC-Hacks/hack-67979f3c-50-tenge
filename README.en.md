@@ -294,3 +294,11 @@ Supporting documents are in Russian:
 - [Communities, priority, and stability](docs/ranking.md).
 - [Slide diagram — SVG](docs/scheme.svg), [Mermaid](docs/scheme.md).
 - Required files for the jury: `out/nodes_roles.csv`, `out/clusters.csv`, `out/top_nodes.csv`.
+
+## Priority weight sensitivity
+
+The calculation tab shows eight scenarios: each priority weight is multiplied by 0.8 and 1.2 separately, then all weights are normalized. The documented seed selection policy is reapplied. Between 28 and 30 baseline top-30 clients remain on this dataset. Per-client results include top-list inclusion counts and overall rank range. Results are stored in run_metadata.json under priority_sensitivity; mandatory CSVs retain their original ranking. This is a limited sensitivity experiment, not a detection accuracy estimate. Full calculation took 4.70 seconds.
+
+## Collectors queue and secondary signals
+
+The “Открыть очередь сборщиков” shortcut clears search and filters and lists all clients whose primary role is consolidator (70 in this dataset), ordered by the existing priority. The official top-30 is unchanged. Cards also show other matching rules using the same predicates as primary role assignment. Multiple signals are not independent evidence; collection does not establish retained account balances.

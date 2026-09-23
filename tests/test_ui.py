@@ -207,3 +207,32 @@ def test_bonus_panels_real_reports_and_cluster_edge_cases(ui_data, monkeypatch):
     assert not screen.exception
     assert any("операций этого клиента нет" in item.value for item in screen.info)
     assert any("Изолированных клиентов" in item.value for item in screen.caption)
+
+
+def test_collectors_shortcut_and_secondary_signals(ui_data, monkeypatch):
+    output, nodes, _ = ui_data
+    monkeypatch.setattr(app, 'OUT', output)
+    app.load_tables.clear()
+    screen = AppTest.from_string('import viz.app as app\napp.main()', default_timeout=30).run()
+    screen.selectbox(key='seed_filter').set_value('Да').run()
+    screen.text_input(key='client_search').set_value(str(int(nodes.gid.iloc[0]))).run()
+    screen.button(key='open_collectors').click().run()
+    assert not screen.exception
+    assert screen.text_input(key='client_search').value == ''
+    assert screen.selectbox(key='seed_filter').value == 'Все'
+    assert screen.multiselect(key='role_filter').value == ['consolidator']
+    expected = nodes[nodes.role.eq('consolidator')].sort_values(
+        ['priority_score', 'gid'], ascending=[False, True])
+    assert screen.selectbox(key='client_select').value == str(int(expected.gid.iloc[0]))
+    assert len(screen.selectbox(key='client_select').options) == len(expected)
+    metadata = json.loads((output / 'run_metadata.json').read_text())
+    overlapping = nodes[nodes.role.eq('coordinator') & nodes.out_deg.ge(5)
+                        & nodes.out_deg.ge(2 * nodes.in_deg.clip(lower=1))]
+    assert len(overlapping) > 0
+    row = overlapping.iloc[0]
+    assert 'distributor' in app.secondary_signals(row, metadata)
+    screen.text_input(key='client_search').set_value(str(int(row.gid))).run()
+    assert not screen.exception
+    assert any('Дополнительные признаки' in item.value for item in screen.markdown)
+    for _, boundary in nodes[nodes.truncated_by_depth].iterrows():
+        assert 'terminal' not in app.secondary_signals(boundary, metadata)

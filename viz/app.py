@@ -19,6 +19,7 @@ from viz.ai_assistant import render_assistant
 from viz.cluster_quality import render_cluster_quality
 from viz.bonus_panels import render_bonus_panels
 from viz.graph_agent import render_graph_agent
+from pipeline.roles import role_candidates
 
 OUT = ROOT / "out"
 DATA = ROOT / "data"
@@ -90,6 +91,22 @@ def reset_filters():
 
 def clear_search():
     st.session_state["client_search"] = ""
+
+
+def open_collectors():
+    reset_filters()
+    clear_search()
+    st.session_state["role_filter"] = ["consolidator"]
+    st.session_state.pop("client_select", None)
+
+
+def secondary_signals(row, metadata):
+    thresholds = metadata.get("role_thresholds", {})
+    if not {"in_kzt_q75", "betweenness_q95"}.issubset(thresholds):
+        return []
+    candidates = role_candidates(pd.DataFrame([row.to_dict()]), thresholds)
+    return [name for name in ("coordinator", "consolidator", "distributor", "terminal", "transit")
+            if name != row.role and bool(candidates[name].iloc[0])]
 
 
 def money(value):
@@ -224,6 +241,22 @@ def review_reason(row):
 
 
 def audit_panel(row, metadata):
+    diagnostic = metadata.get("priority_sensitivity")
+    if diagnostic:
+        with st.expander("Насколько приоритет зависит от выбранных весов"):
+            st.write(diagnostic["method"])
+            detail = diagnostic["nodes"].get(str(int(row.gid)))
+            if detail:
+                st.write(f"Входит в официальный top-30 в {detail['top_hits']} из {detail['scenarios']} сценариев. "
+                         f"Место в общей очереди всех клиентов: {detail['rank_min']}–{detail['rank_max']}.")
+            labels = {"priority_volume": "Объём", "priority_bridge": "Посредничество",
+                      "priority_seed": "Связи с исходным списком", "priority_degree": "Количество связей"}
+            st.dataframe(pd.DataFrame([{
+                "Изменённый вес": labels[s["factor"]], "Множитель": s["multiplier"],
+                "Сохранилось из исходного top": s["retained"], "Размер исходного top": s["baseline_size"],
+                "Отбор": "Только вне исходного списка" if s["selection_policy"] == "non_seed" else "Все клиенты",
+            } for s in diagnostic["scenarios"]]), hide_index=True)
+            st.caption(diagnostic["caveat"])
     with st.expander("Правило, пороги и вклад каждого признака", expanded=True):
         st.write("Обоснование роли:", node_value(row, "evidence"))
         rule = str(node_value(row, "role_rule"))
@@ -292,6 +325,13 @@ def main():
         ("Сумма переводов", money(edges.sum_kzt.sum())),
     ])
     st.caption("Сумма переводов учитывает каждый перевод: одни и те же деньги могли пройти через несколько клиентов.")
+    collectors = roles.loc[roles.role.eq("consolidator")]
+    with st.container(border=True):
+        st.markdown(f"**Точки сбора средств · {len(collectors)} клиентов**")
+        st.caption("Отдельная очередь помогает увидеть сборщиков, даже если они не вошли в общий top-30. "
+                   "Внутри очереди действует основной приоритет. Сбор поступлений не доказывает накопление денег на счёте.")
+        st.button("Открыть очередь сборщиков", key="open_collectors", on_click=open_collectors,
+                  disabled=collectors.empty)
     with st.sidebar:
         if st.toggle("❔ Как пользоваться", key="show_help", help="Краткая инструкция и значение основных терминов"):
             st.markdown("""
@@ -380,6 +420,14 @@ def main():
             f'<span class="money-badge">{escape(str(tag))}</span>' for tag in tags) + '</div>', unsafe_allow_html=True)
         st.markdown("**Почему обратить внимание**")
         st.write(review_reason(row))
+        additional = secondary_signals(row, metadata)
+        if additional:
+            st.markdown("**Дополнительные признаки по правилам**")
+            st.write(" · ".join(ROLE_NAMES[name] for name in additional))
+            st.caption("Одновременно выполнены несколько правил. Основная роль выбрана по документированному порядку; "
+                       "дополнительные признаки не являются независимым подтверждением подозрительности.")
+        if row.role == "consolidator" or "consolidator" in additional:
+            st.caption("Наблюдается сбор переводов от нескольких отправителей. Остаток на счёте и удержание денег по этим данным не установлены.")
         factors = {
             "priority_volume": "объём переводов",
             "priority_bridge": "положение между другими клиентами в сети",

@@ -46,19 +46,36 @@ def node_value(row, key, default="—"):
 
 
 def neighborhood(edges: pd.DataFrame, gid: int, hops: int, max_nodes: int = 200):
-    """Undirected traversal for display; edge directions are retained."""
+    """Show a connected prefix of BFS layers; count the complete neighborhood."""
     adjacency = {}
     for edge in edges.itertuples(index=False):
         adjacency.setdefault(int(edge.src), set()).add(int(edge.dst))
         adjacency.setdefault(int(edge.dst), set()).add(int(edge.src))
     seen = {gid}
-    frontier = {gid}
+    visible = {gid}
+    frontier = [gid]
     for _ in range(hops):
-        frontier = set().union(*(adjacency.get(n, set()) for n in frontier)) - seen
-        seen.update(frontier)
-    ordered = [gid] + sorted(seen - {gid})
-    visible = set(ordered[:max_nodes])
+        following = set()
+        for parent in sorted(frontier):
+            for neighbor in sorted(adjacency.get(parent, ())):
+                if neighbor not in seen:
+                    seen.add(neighbor)
+                    following.add(neighbor)
+                if parent in visible and len(visible) < max_nodes:
+                    visible.add(neighbor)
+        frontier = sorted(following)
     return visible, len(seen) - len(visible)
+
+
+def filtered_nodes(roles, selected_roles, selected_clusters, seed_filter):
+    result = roles
+    if selected_roles:
+        result = result[result.role.isin(selected_roles)]
+    if selected_clusters:
+        result = result[result.cluster_id.isin(selected_clusters)]
+    if seed_filter != "Все":
+        result = result[result.is_seed.eq(seed_filter == "Да")]
+    return result.sort_values(["priority_score", "gid"], ascending=[False, True]).copy()
 
 
 def graph_html(edges, roles, gid, hops):
@@ -105,18 +122,18 @@ def main():
     for name, path in zip(("Узлы", "Кластеры", "Top-30"), required[:3]):
         st.download_button(f"Скачать {name}", path.read_bytes(), file_name=path.name, mime="text/csv")
 
-    st.subheader("Приоритет проверки")
+    st.subheader("Общий top-30")
+    official = top.copy()
+    official["gid"] = official.gid.astype(str)
+    st.dataframe(official, hide_index=True, use_container_width=True)
+
+    st.subheader("Все узлы по приоритету")
     role_filter = st.multiselect("Роль", sorted(roles.role.dropna().unique()))
     cluster_filter = st.multiselect("Кластер", sorted(roles.cluster_id.dropna().unique()))
     seed_filter = st.selectbox("Seed", ["Все", "Да", "Нет"])
-    listing = top.merge(roles[["gid", "cluster_id", "is_seed"]], on="gid", validate="one_to_one")
-    if role_filter:
-        listing = listing[listing.role.isin(role_filter)]
-    if cluster_filter:
-        listing = listing[listing.cluster_id.isin(cluster_filter)]
-    if seed_filter != "Все":
-        listing = listing[listing.is_seed.eq(seed_filter == "Да")]
-    listing = listing.copy()
+    listing = filtered_nodes(roles, role_filter, cluster_filter, seed_filter)
+    st.caption(f"Найдено узлов: {len(listing)}. Фильтры применены ко всем {len(roles)} узлам.")
+    listing = listing[["gid", "role", "cluster_id", "is_seed", "priority_score", "evidence"]]
     listing["gid"] = listing.gid.astype(str)
     st.dataframe(listing, hide_index=True, use_container_width=True)
 

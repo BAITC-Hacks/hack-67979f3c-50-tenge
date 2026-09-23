@@ -1,0 +1,3 @@
+-r starter/requirements.txt
+# Required by networkx.pagerank.
+scipy>=1.11

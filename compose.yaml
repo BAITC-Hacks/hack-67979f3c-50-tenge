@@ -1,0 +1,7 @@
+services:
+  pipeline:
+    build: .
+    volumes:
+      - ./data:/app/data:ro
+      - ./out:/app/out
+    restart: "no"

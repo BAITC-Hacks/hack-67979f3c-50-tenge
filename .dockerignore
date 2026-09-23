@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!requirements.txt
+!starter/
+!starter/**
+**/__pycache__/
+**/*.pyc
+starter/out/

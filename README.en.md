@@ -216,7 +216,7 @@ The standard run also generates `out/temporal_patterns.json` and `out/network_pa
 
 Temporal matches and cycles do not establish that the same funds moved along a route. Repeated amounts do not prove transaction splitting; transfers below 5,000 KZT are invisible. Node removal is a scenario on the observed graph, not a forecast of activity ending. These methods use documented rules and require no separate ML training.
 
-The previously recorded local run with additional analysis took 4.42 seconds for 2,248 clients, 107 groups, and a top-30 list. It found 112 recurring routes and 218 short cycles. These timings depend on the machine. The new graph agent has not been verified with a live API request, and the additional-analysis screen has not yet been verified in a browser.
+The previously recorded local run with additional analysis took 4.42 seconds for 2,248 clients, 107 groups, and a top-30 list. It found 112 recurring routes and 218 short cycles. These timings depend on the machine. Final verification: 157 tests passed in a clean Python environment without an API key; pip check found no dependency conflicts. Repeated runs produced byte-identical mandatory CSV files and both additional JSON reports within the same environment. The repeat run took 4.41 seconds; the Docker pipeline with Python 3.12 took 2.92 seconds (installation/build excluded). Chrome rendered the graph and additional-analysis routes/cycles without application errors. AI transport and graph tool calls were tested with mocked API responses; no live API request was made. See the Russian README for the full verification scope.
 
 ## Docker alternative
 

@@ -17,6 +17,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from viz.ai_assistant import render_assistant
 from viz.cluster_quality import render_cluster_quality
+from viz.bonus_panels import render_bonus_panels
+from viz.graph_agent import render_graph_agent
 
 OUT = ROOT / "out"
 DATA = ROOT / "data"
@@ -402,8 +404,8 @@ def main():
                     + escape(next_request) + '</div>', unsafe_allow_html=True)
         st.caption("Не видны другие банки и периоды, переводы ниже 5 000 ₸, остатки. У любого клиента могут отсутствовать входы извне; совпадение сумм и достижимость не доказывают маршрут тех же денег.")
 
-    network_tab, flows_tab, group_tab, assistant_tab, audit_tab = st.tabs(
-        ["Схема связей", "Переводы", "Группа клиента", "Помощник", "Расчёт и основания"])
+    network_tab, flows_tab, group_tab, bonus_tab, assistant_tab, audit_tab = st.tabs(
+        ["Схема связей", "Переводы", "Группа клиента", "Дополнительный анализ", "Помощник", "Расчёт и основания"])
     with network_tab:
         controls = st.columns(2)
         color_by = controls[0].radio("Раскраска схемы", ["По ролям", "По группам"], horizontal=True, key="graph_color")
@@ -477,7 +479,13 @@ def main():
                     key="group_download")
             st.caption("Группа объединяет клиентов по связности переводов, не доказывает общую деятельность. Встречные переводы складываются только при поиске групп; на схеме их направление сохранено.")
     with assistant_tab:
-        render_assistant(roles, edges, gid)
+        explain_tab, graph_query_tab = st.tabs(["Объяснить клиента", "Задать вопрос по сети"])
+        with explain_tab:
+            render_assistant(roles, edges, gid)
+        with graph_query_tab:
+            render_graph_agent(roles, edges, gid)
+    with bonus_tab:
+        render_bonus_panels(OUT, gid)
     with audit_tab:
         st.caption("Проверьте гипотезу по исходным числам. Оценки рассчитаны правилами; ниже сохранены условия, пороги и составляющие приоритета.")
         audit_panel(row, metadata)

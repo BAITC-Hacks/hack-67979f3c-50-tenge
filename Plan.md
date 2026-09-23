@@ -103,6 +103,13 @@ run.py: load → validate → build_graph → features ⋈ seed_df (по gid) �
 
 ## 4. Очерёдность и контрольные точки на 5 часов
 
+Бонусы после базовой интеграции: `pipeline/temporal.py` — временные признаки и
+объяснимые аномалии; `pipeline/routes.py` — ограниченные маршруты, циклы и
+сценарии удаления; `viz/graph_agent.py` — вызов ограниченных функций графа по
+вопросу аналитика; `viz/bonus_panels.py` — просмотр отчётов. Координатор
+интегрирует в run.py и UI. Точные контракты — AGENTS.md, методы — docs/temporal.md,
+docs/routes.md и docs/graph-agent.md. Обязательный локальный расчёт не зависит от AI.
+
 Дополнение после аудита кластеров: B — `pipeline/stability.py`,
 `analyze_stability(G,nodes,cluster_map) -> (node_metrics,cluster_metrics,diagnostics)`.
 C соединяет метрики в `run.py`, сохраняет диагностику в `run_metadata.json`

@@ -34,6 +34,8 @@ def main(data_dir: Path, out_dir: Path) -> None:
         from pipeline.seeds import compute_seed_reach
         from pipeline.clusters import assign_clusters, summarize_clusters
         from pipeline.stability import analyze_stability
+        from pipeline.temporal import analyze_temporal
+        from pipeline.routes import analyze_routes
         from pipeline.priority import compute_priority, make_top_nodes
         from pipeline.outputs import write_outputs
     except ImportError as exc:
@@ -57,6 +59,9 @@ def main(data_dir: Path, out_dir: Path) -> None:
     with_clusters = _merge_nodes(roles, clusters, "clusters")
     with_clusters = _merge_nodes(with_clusters, stability_nodes, "cluster stability")
     scored = compute_priority(with_clusters)
+    temporal_nodes, temporal_report = analyze_temporal(nodes, transactions, scored)
+    scored = _merge_nodes(scored, temporal_nodes, "temporal patterns")
+    network_report = analyze_routes(graph, transactions, scored)
     if not scored.gid.is_unique or set(scored.gid) != set(nodes.gid):
         raise ValueError("Приоритет потерял или продублировал gid")
     cluster_summary = summarize_clusters(graph, scored)
@@ -66,11 +71,16 @@ def main(data_dir: Path, out_dir: Path) -> None:
     cluster_summary = cluster_summary.merge(stability_clusters, on="cluster_id", validate="one_to_one")
     top = make_top_nodes(scored, limit=30)
     write_outputs(scored, cluster_summary, top, out_dir)
+    for filename, report in (("temporal_patterns.json", temporal_report),
+                             ("network_patterns.json", network_report)):
+        (out_dir / filename).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     metadata = {
         "role_thresholds": thresholds,
         "role_candidate_counts": candidate_counts,
         "cluster_seed": 42,
         "cluster_stability": stability_diagnostics,
+        "bonus_reports": ["temporal_patterns.json", "network_patterns.json"],
         "nodes": len(nodes), "edges": len(edges), "transactions": len(transactions),
         "duration_seconds": round(perf_counter() - started, 3),
         "versions": {"python": sys.version.split()[0], **{

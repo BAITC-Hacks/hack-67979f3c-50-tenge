@@ -1,3 +1,8 @@
 -r starter/requirements.txt
 # Required by networkx.pagerank.
 scipy>=1.11
+# Analyst screen.
+streamlit>=1.30
+pyvis>=0.3
+# Tests.
+pytest>=7.4

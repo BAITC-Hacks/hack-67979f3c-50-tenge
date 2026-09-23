@@ -16,7 +16,7 @@ nodes, edges, transactions = load_data("data")
 validate_inputs(nodes, edges, transactions)
 G = build_graph(nodes, edges)
 features = compute_features(G, nodes)
-# Следующие строки требуют готового pipeline/seeds.py потока B:
+# Seed-метрики B проверены совместно с ролями A:
 from pipeline.seeds import compute_seed_reach
 seed_df = compute_seed_reach(G, nodes)
 joined = features.merge(seed_df, on="gid", how="left", validate="one_to_one")
@@ -158,11 +158,13 @@ python -m pytest tests/test_roles.py::test_real_roles_contract_and_repeatability
 Интеграционный тест A на реальных данных проверяет 2 248 уникальных gid,
 35 компонент полного графа, 19 изолятов, 444 узла на обрыве, заполненность
 полей роли, score и evidence, а также точное повторение результата при
-перемешивании входных строк. Для отсутствующего пока модуля B тест
-считает **эталонную seed-достижимость обратным BFS** в тестовом коде.
-Это не проверка `pipeline/seeds.py` и не полный прогон трёх CSV.
+перемешивании входных строк. Тест вызывает настоящий `pipeline/seeds.py` и сравнивает его результат
+с независимым обратным BFS. Отдельный CLI-тест дважды запускает `run.py`
+с настоящими модулями A/B/C, сравнивает все три CSV побайтово, проверяет
+сохранение ролей в экспорте и независимо пересчитывает формулу приоритета
+и отбор top-30 по выгруженным признакам.
 
-Распределение ролей с этой эталонной seed-достижимостью:
+Распределение ролей после подключения настоящей seed-достижимости B:
 
 | Роль | Узлов |
 |---|---:|

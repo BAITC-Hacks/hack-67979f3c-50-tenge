@@ -1,6 +1,8 @@
 """Правила, границы применимости и формулы оценок потока A."""
 
 from pathlib import Path
+import subprocess
+import sys
 import time
 
 import networkx as nx
@@ -12,6 +14,7 @@ from pipeline.features import compute_features
 from pipeline.graph import build_graph
 from pipeline.io import load_data, validate_inputs
 from pipeline.roles import ROLES, assign_roles, compute_role_thresholds
+from pipeline.seeds import compute_seed_reach
 
 
 def features(*overrides):
@@ -199,10 +202,7 @@ def test_chain_from_graph_to_roles():
 
 
 def test_real_roles_contract_and_repeatability():
-    """A-only integration: reverse BFS is an explicit test fixture for B.
-
-    This does not validate the production seeds.py or the full three-CSV run.
-    """
+    """Real A+B integration; independently check seed metrics via reverse BFS."""
     start = time.perf_counter()
     nodes, edges, tx = load_data(Path(__file__).resolve().parents[1] / "data")
     validate_inputs(nodes, edges, tx)
@@ -216,7 +216,12 @@ def test_real_roles_contract_and_repeatability():
         sources = seeds.intersection(distances) - {gid}
         distance = 0 if gid in seeds else min((distances[s] for s in sources), default=np.nan)
         records.append((gid, len(sources), distance))
-    seed_df = pd.DataFrame(records, columns=["gid", "seed_reach_count", "seed_distance"])
+    reference = pd.DataFrame(records, columns=["gid", "seed_reach_count", "seed_distance"])
+    seed_df = compute_seed_reach(graph, nodes)
+    pd.testing.assert_frame_equal(
+        seed_df.sort_values("gid").reset_index(drop=True),
+        reference.astype({"seed_distance": "Int64"}).sort_values("gid").reset_index(drop=True),
+    )
     result = assign_roles(frame.merge(seed_df, on="gid", validate="one_to_one"))
     assert len(result) == 2248 and result.gid.is_unique
     assert set(result.gid) == set(nodes.gid)
@@ -233,11 +238,59 @@ def test_real_roles_contract_and_repeatability():
     assert result.role_rule.eq("isolated").sum() == 19
     shuffled_nodes = nodes.sample(frac=1, random_state=42)
     shuffled_edges = edges.sample(frac=1, random_state=42)
-    repeated = assign_roles(compute_features(build_graph(shuffled_nodes, shuffled_edges), shuffled_nodes)
-                            .merge(seed_df, on="gid", validate="one_to_one"))
+    shuffled_graph = build_graph(shuffled_nodes, shuffled_edges)
+    repeated = assign_roles(compute_features(shuffled_graph, shuffled_nodes)
+                            .merge(compute_seed_reach(shuffled_graph, shuffled_nodes),
+                                   on="gid", validate="one_to_one"))
     pd.testing.assert_frame_equal(result.sort_values("gid").reset_index(drop=True),
                                   repeated.sort_values("gid").reset_index(drop=True), check_exact=True)
     print({"roles": result.role.value_counts().to_dict(),
            "rules": result.role_rule.value_counts().to_dict(),
            "thresholds": result.attrs["role_thresholds"],
            "two_A_runs_seconds": round(time.perf_counter() - start, 3)})
+
+
+def test_cli_exports_real_roles_and_repeats_exactly(tmp_path):
+    """Exercise C's CLI and B's exports with actual A roles, not fixture labels."""
+    root = Path(__file__).resolve().parents[1]
+    for folder in ("first", "second"):
+        completed = subprocess.run(
+            [sys.executable, str(root / "run.py"), "--data", str(root / "data"),
+             "--out", str(tmp_path / folder)],
+            cwd=root, capture_output=True, text=True, timeout=300,
+        )
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+    for filename in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv"):
+        assert (tmp_path / "first" / filename).read_bytes() == (tmp_path / "second" / filename).read_bytes()
+    nodes = pd.read_csv(tmp_path / "first" / "nodes_roles.csv", dtype={"gid": "int64"})
+    clusters = pd.read_csv(tmp_path / "first" / "clusters.csv")
+    top = pd.read_csv(tmp_path / "first" / "top_nodes.csv", dtype={"gid": "int64"})
+    raw = pd.read_parquet(root / "data" / "nodes.parquet")
+    assert len(nodes) == len(raw) == 2248 and nodes.gid.is_unique
+    assert set(nodes.gid) == set(raw.gid)
+    assert set(nodes.cluster_id) == set(clusters.cluster_id)
+    assert nodes.role.isin(ROLES).all() and nodes.role_rule.notna().all()
+    assert nodes.role_score.between(0, 1).all()
+    assert nodes.evidence.str.len().between(1, 200).all()
+    assert nodes.evidence.str.contains(r"\d").all()
+    assert not nodes.loc[nodes.truncated_by_depth, "role"].eq("terminal").any()
+    assert len(top) == 30 and top.gid.is_unique
+    assert top.priority_score.is_monotonic_decreasing
+    assert top["rank"].tolist() == list(range(1, 31))
+    assert nodes.set_index("gid").loc[top.gid, "role"].tolist() == top.role.tolist()
+    # Independent priority audit: compare ranks, not merely the saved contribution sum.
+    def percentile(values):
+        positive = sorted(float(v) for v in values if v > 0)
+        return np.array([0. if v == 0 else
+                         (np.searchsorted(positive, v, side="left") + 1
+                          + np.searchsorted(positive, v, side="right")) / (2 * len(positive))
+                         for v in values])
+    volume = nodes.out_kzt.where(nodes.is_seed, nodes[["in_kzt", "out_kzt"]].max(axis=1))
+    degree = nodes.out_deg.where(nodes.is_seed, nodes.in_deg + nodes.out_deg)
+    expected = (.35 * percentile(volume) + .30 * percentile(nodes.betweenness)
+                + .20 * np.minimum(nodes.seed_reach_count / 3, 1) + .15 * percentile(degree))
+    np.testing.assert_allclose(nodes.priority_score, expected, rtol=0, atol=1e-12)
+    selected = nodes.sort_values(["priority_score", "gid"], ascending=[False, True])
+    if selected.head(30).is_seed.sum() > 10:
+        selected = selected.loc[~selected.is_seed]
+    assert selected.head(30).gid.tolist() == top.gid.tolist()

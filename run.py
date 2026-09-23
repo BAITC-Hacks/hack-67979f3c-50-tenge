@@ -33,6 +33,7 @@ def main(data_dir: Path, out_dir: Path) -> None:
         from pipeline.roles import assign_roles
         from pipeline.seeds import compute_seed_reach
         from pipeline.clusters import assign_clusters, summarize_clusters
+        from pipeline.stability import analyze_stability
         from pipeline.priority import compute_priority, make_top_nodes
         from pipeline.outputs import write_outputs
     except ImportError as exc:
@@ -52,17 +53,24 @@ def main(data_dir: Path, out_dir: Path) -> None:
     thresholds = roles.attrs.get("role_thresholds", {})
     candidate_counts = roles.attrs.get("role_candidate_counts", {})
     clusters = assign_clusters(graph, nodes)
+    stability_nodes, stability_clusters, stability_diagnostics = analyze_stability(graph, nodes, clusters)
     with_clusters = _merge_nodes(roles, clusters, "clusters")
+    with_clusters = _merge_nodes(with_clusters, stability_nodes, "cluster stability")
     scored = compute_priority(with_clusters)
     if not scored.gid.is_unique or set(scored.gid) != set(nodes.gid):
         raise ValueError("Приоритет потерял или продублировал gid")
     cluster_summary = summarize_clusters(graph, scored)
+    if (not stability_clusters.cluster_id.is_unique
+            or set(stability_clusters.cluster_id) != set(cluster_summary.cluster_id)):
+        raise ValueError("Устойчивость: набор кластеров не совпадает со сводкой")
+    cluster_summary = cluster_summary.merge(stability_clusters, on="cluster_id", validate="one_to_one")
     top = make_top_nodes(scored, limit=30)
     write_outputs(scored, cluster_summary, top, out_dir)
     metadata = {
         "role_thresholds": thresholds,
         "role_candidate_counts": candidate_counts,
         "cluster_seed": 42,
+        "cluster_stability": stability_diagnostics,
         "nodes": len(nodes), "edges": len(edges), "transactions": len(transactions),
         "duration_seconds": round(perf_counter() - started, 3),
         "versions": {"python": sys.version.split()[0], **{

@@ -165,6 +165,20 @@ peripheral` (расширять можно, но задокументирова�
 
 ## Как запускать и проверять себя
 
+### Дополнительная диагностика устойчивости кластеров
+
+`pipeline/stability.py` (B) предоставляет `analyze_stability(G, nodes, cluster_map)`:
+возвращает метрики узлов, метрики групп и JSON-совместимую диагностику. `run.py`
+соединяет их по `gid`/`cluster_id`. Обязательные схемы ТЗ сохраняются.
+Дополнительные поля nodes: `cluster_membership_stability`, `cluster_membership_status`.
+Дополнительные поля clusters: `stability_mean`, `stability_min`, `stability_status`,
+`n_core`, `n_disputed`, `stability_runs`. Статусы узлов: core/disputed/isolated;
+статусы групп: stable/variable/unstable/isolated. Это повторяемость при смене
+случайного старта, не вероятность правильности или совместной деятельности.
+`viz/cluster_quality.py` показывает диагностику и направленные межгрупповые потоки.
+Согласованное разбиение сравнивается экспериментально в метаданных; автоматически
+не заменяет `cluster_id` основной версии.
+
 Целевая команда после появления модулей A/B (Docker уже настроен на `run.py`):
 
 ```bash

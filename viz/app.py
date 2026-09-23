@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from viz.ai_assistant import render_assistant
+from viz.cluster_quality import render_cluster_quality
 
 OUT = ROOT / "out"
 DATA = ROOT / "data"
@@ -452,6 +453,7 @@ def main():
             group_metrics[1].metric("Из исходного списка", int(group.n_seed))
             group_metrics[2].metric("Переводы внутри группы", money(group.sum_kzt_internal))
             st.write("**Гипотеза по данным:**", group.hypothesis)
+            render_cluster_quality(roles, edges, int(row.cluster_id), summary=group)
             all_members = group_members(roles, row.cluster_id)
             mode = st.radio("Кого показать в группе", ["Всю группу", "Выбрать клиентов"],
                             horizontal=True, key="group_mode",

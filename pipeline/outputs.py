@@ -87,6 +87,29 @@ def write_outputs(scored_df, clusters_df, top_df, out_dir) -> None:
         if not seed_counts.eq(summaries.n_seed.reindex(seed_counts.index)).all():
             raise ValueError("clusters: seed count mismatch")
     membership = nodes.set_index("gid").cluster_id.to_dict()
+    stability_fields = {"cluster_membership_stability", "cluster_membership_status"}
+    if stability_fields.intersection(nodes.columns):
+        _required(nodes, sorted(stability_fields), "node stability")
+        _numeric(nodes.cluster_membership_stability, "cluster_membership_stability", upper=1)
+        if not nodes.cluster_membership_status.isin(["core", "disputed", "isolated"]).all():
+            raise ValueError("node stability: unknown status")
+        fields = {"stability_mean", "stability_min", "stability_status", "n_core", "n_disputed", "stability_runs"}
+        _required(clusters, sorted(fields), "cluster stability")
+        for field in ("stability_mean", "stability_min"):
+            _numeric(clusters[field], field, upper=1)
+        if (clusters.stability_min > clusters.stability_mean + 1e-12).any():
+            raise ValueError("cluster stability: minimum exceeds mean")
+        if not clusters.stability_status.isin(["stable", "variable", "unstable", "isolated"]).all():
+            raise ValueError("cluster stability: unknown status")
+        for field in ("n_core", "n_disputed", "stability_runs"):
+            _integer(clusters[field], field)
+            _numeric(clusters[field], field)
+        if (clusters.stability_runs < 1).any():
+            raise ValueError("cluster stability: no repeated runs")
+        for status, field in (("core", "n_core"), ("disputed", "n_disputed")):
+            actual = nodes.cluster_membership_status.eq(status).groupby(nodes.cluster_id).sum()
+            if not clusters.set_index("cluster_id")[field].eq(actual).all():
+                raise ValueError("cluster stability: membership count mismatch")
     for row in clusters.itertuples(index=False):
         try:
             gids = json.loads(row.top_gids)

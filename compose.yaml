@@ -7,6 +7,9 @@ services:
     restart: "no"
   dashboard:
     build: .
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
     command: ["streamlit", "run", "viz/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     ports:
       - "8501:8501"

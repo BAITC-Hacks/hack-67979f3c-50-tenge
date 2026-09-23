@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 .idea/
 .pytest_cache/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml

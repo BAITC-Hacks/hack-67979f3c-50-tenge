@@ -2,6 +2,7 @@
 
 import json
 import colorsys
+import sys
 from html import escape
 from pathlib import Path
 
@@ -12,18 +13,80 @@ from pyvis.network import Network
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from viz.ai_assistant import render_assistant
+
 OUT = ROOT / "out"
 DATA = ROOT / "data"
 COLORS = {
-    "consolidator": "#d97706", "transit": "#2563eb",
-    "distributor": "#7c3aed", "terminal": "#0d9488",
-    "coordinator": "#dc2626", "peripheral": "#64748b",
+    "consolidator": "#fbbf24", "transit": "#60a5fa",
+    "distributor": "#a78bfa", "terminal": "#2dd4bf",
+    "coordinator": "#fb7185", "peripheral": "#94a3b8",
 }
 ROLE_NAMES = {
     "consolidator": "Признаки сбора средств", "transit": "Передаёт средства дальше",
     "distributor": "Распределяет средства", "terminal": "Нет видимых переводов дальше",
     "coordinator": "Связующий участник", "peripheral": "Роль не определена",
 }
+
+
+def apply_design():
+    """Local visual styles: stable Streamlit containers and our own classes."""
+    st.markdown("""<style>
+    [data-testid="stAppViewContainer"] {background:#0b1120;color:#e5edf8;}
+    [data-testid="stHeader"] {background:rgba(11,17,32,.94);}
+    [data-testid="stSidebar"] {background:#10192a;border-right:1px solid #243149;}
+    [data-testid="stMainBlockContainer"] {max-width:1540px;padding-top:2rem;padding-bottom:2rem;}
+    [data-testid="stMetric"] {background:#141e30;border:1px solid #26344d;border-radius:14px;padding:16px;}
+    [data-testid="stMetricValue"] {font-variant-numeric:tabular-nums;font-size:1.45rem;}
+    [data-testid="stDataFrame"] {border:1px solid #26344d;border-radius:12px;overflow:hidden;}
+    [data-testid="stExpander"] {border-color:#26344d;border-radius:12px;}
+    [data-testid="stTabs"] [role="tablist"] {gap:1rem;border-bottom:1px solid #26344d;}
+    [data-testid="stTabs"] [role="tab"] {padding:12px 5px;font-weight:550;}
+    [data-testid="stTabs"] [aria-selected="true"] {color:#93c5fd;}
+    .money-header {display:flex;align-items:center;gap:14px;margin:0 0 8px;}
+    .money-mark {display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:#1e3453;color:#93c5fd;font-size:26px;flex-shrink:0;}
+    .money-title {font-size:1.85rem;line-height:1.15;letter-spacing:-.04em;font-weight:750;color:#f1f5f9;}
+    .money-eyebrow {color:#94a3b8;font-size:.76rem;letter-spacing:.09em;text-transform:uppercase;margin-bottom:5px;}
+    .money-subtitle {color:#a9b8cc;font-size:.92rem;line-height:1.55;margin:0 0 18px;max-width:940px;}
+    .money-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:8px 0 4px;}
+    .money-grid.flow {grid-template-columns:repeat(2,minmax(0,1fr));margin:16px 0;}
+    .money-stat {background:linear-gradient(135deg,#172339,#121c2d);border:1px solid #293750;border-radius:14px;padding:15px 18px;min-width:0;}
+    .money-stat-label {color:#b0bfd2;font-size:.8rem;margin-bottom:7px;}
+    .money-stat-value {color:#f1f5f9;font-size:clamp(1.08rem,1.65vw,1.65rem);line-height:1.3;font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+    .money-client {display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin:8px 0 12px;}
+    .money-id {font-size:clamp(1.05rem,1.7vw,1.4rem);font-weight:650;font-variant-numeric:tabular-nums;color:#f1f5f9;overflow-wrap:anywhere;}
+    .money-score {text-align:right;min-width:90px;color:#93c5fd;font-size:1.8rem;font-weight:750;line-height:1.2;}
+    .money-score small {font-size:.78rem;color:#a9b8cc;font-weight:400;display:block;}
+    .money-badges {display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+    .money-badge {font-size:.76rem;background:#19273d;border:1px solid #30415e;border-radius:24px;padding:5px 10px;color:#c9d8eb;}
+    .money-next {border-left:3px solid #60a5fa;background:#14233a;border-radius:0 10px 10px 0;padding:13px 16px;font-size:.91rem;line-height:1.6;margin:12px 0;}
+    .money-next strong {color:#bfdbfe;display:block;font-size:.78rem;margin-bottom:4px;}
+    .money-legend {display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0;font-size:.8rem;color:#c5d1e3;}
+    .money-legend-item {display:inline-flex;align-items:center;gap:7px;}
+    .money-dot {width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;}
+    @media(max-width:760px){.money-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.money-title{font-size:1.5rem;}.money-stat{padding:12px;}}
+    </style>""", unsafe_allow_html=True)
+
+
+def stat_cards(items, *, flow=False):
+    cards = "".join(
+        '<div class="money-stat"><div class="money-stat-label">' + escape(str(label))
+        + '</div><div class="money-stat-value">' + escape(str(value)) + '</div></div>'
+        for label, value in items
+    )
+    st.markdown(f'<div class="money-grid{" flow" if flow else ""}">{cards}</div>', unsafe_allow_html=True)
+
+
+def reset_filters():
+    st.session_state["role_filter"] = []
+    st.session_state["cluster_filter"] = []
+    st.session_state["seed_filter"] = "Все"
+
+
+def clear_search():
+    st.session_state["client_search"] = ""
 
 
 def money(value):
@@ -114,7 +177,7 @@ def graph_html(edges, roles, gid, hops, color_by="По ролям"):
     visible, hidden = neighborhood(edges, gid, hops)
     table = roles.set_index("gid")
     graph = Network(height="510px", width="100%", directed=True,
-                    bgcolor="#111827", font_color="#f8fafc", cdn_resources="in_line")
+                    bgcolor="#0f192b", font_color="#e5edf8", cdn_resources="in_line")
     graph.barnes_hut()
     for node_id in sorted(visible):
         if node_id not in table.index:
@@ -158,7 +221,7 @@ def review_reason(row):
 
 
 def audit_panel(row, metadata):
-    with st.expander("Проверить расчёт: правило, пороги и вклад каждого признака"):
+    with st.expander("Правило, пороги и вклад каждого признака", expanded=True):
         st.write("Обоснование роли:", node_value(row, "evidence"))
         rule = str(node_value(row, "role_rule"))
         thresholds = metadata.get("role_thresholds", {})
@@ -202,8 +265,13 @@ def audit_panel(row, metadata):
 
 def main():
     st.set_page_config(page_title="Граф денег · очередь проверки", layout="wide")
-    st.title("Граф денег")
-    st.caption("Очередь проверки клиентов и наблюдаемые связи. Роли — гипотезы, приоритет — баллы для выбора следующей проверки, не вероятность виновности.")
+    apply_design()
+    st.markdown('<div class="money-header"><div class="money-mark">↗</div><div>'
+                '<div class="money-eyebrow">50 Tenge · анализ переводов</div>'
+                '<div class="money-title">Граф денег</div></div></div>'
+                '<p class="money-subtitle">Выберите клиента, разберите его связи и определите следующий шаг проверки. '
+                'Роли — гипотезы; приоритет помогает упорядочить работу и не означает вероятность нарушения.</p>',
+                unsafe_allow_html=True)
     required = [OUT / name for name in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv")]
     required.extend([DATA / "edges.parquet", OUT / "run_metadata.json"])
     missing = [str(p.relative_to(ROOT)) for p in required if not p.exists()]
@@ -214,21 +282,23 @@ def main():
     if not roles.gid.is_unique:
         st.error("В nodes_roles.csv повторяются gid")
         st.stop()
-    counters = st.columns(4)
-    for col, title, value in zip(counters,
-            ["Клиентов в выборке", "В исходном списке", "Групп клиентов", "Сумма переводов"],
-            [f"{len(roles):,}".replace(",", " "), int(roles.is_seed.sum()), len(clusters), money(edges.sum_kzt.sum())]):
-        col.metric(title, value)
+    stat_cards([
+        ("Клиентов в выборке", f"{len(roles):,}".replace(",", " ")),
+        ("В исходном списке", int(roles.is_seed.sum())),
+        ("Групп клиентов", len(clusters)),
+        ("Сумма переводов", money(edges.sum_kzt.sum())),
+    ])
     st.caption("Сумма переводов учитывает каждый перевод: одни и те же деньги могли пройти через несколько клиентов.")
     with st.sidebar:
         if st.toggle("❔ Как пользоваться", key="show_help", help="Краткая инструкция и значение основных терминов"):
             st.markdown("""
 **С чего начать**
 
-1. Посмотрите «Кого проверить первым» и выберите клиента из очереди.
+1. Посмотрите «Очередь проверки» и выберите клиента из списка.
 2. Если известен номер клиента, вставьте его в поиск: он работает по всей выборке.
-3. Откройте «Связи на схеме», чтобы увидеть направление переводов.
-4. Во вкладке «Группа клиентов» покажите всю группу или выберите одного либо нескольких участников.
+3. Откройте «Схема связей», чтобы увидеть направление переводов.
+4. Во вкладке «Группа клиента» покажите всю группу или выберите одного либо нескольких участников.
+5. «Помощник» отвечает на вопросы по данным, а «Расчёт и основания» показывает правила и числа.
 
 **Что означают слова**
 
@@ -239,35 +309,48 @@ def main():
 Данные не охватывают другие банки, соседние периоды и переводы ниже 5 000 ₸.
 """)
         st.divider()
-        st.header("Область проверки")
-        st.caption("Фильтры применяются ко всем клиентам. Исходный список — отправные точки расследования, обозначены ★.")
+        st.subheader("Фильтры очереди")
+        st.caption("Применяются ко всей выборке. Поиск по номеру работает независимо от фильтров.")
         role_filter = st.multiselect("Предполагаемая роль", sorted(roles.role.unique()),
-                                     format_func=lambda value: ROLE_NAMES.get(value, value), key="role_filter")
-        cluster_filter = st.multiselect("Группа клиентов", sorted(roles.cluster_id.unique()), key="cluster_filter")
-        seed_filter = st.selectbox("В исходном списке", ["Все", "Да", "Нет"], key="seed_filter")
+                                     format_func=lambda value: ROLE_NAMES.get(value, value), key="role_filter",
+                                     placeholder="Все роли")
+        cluster_filter = st.multiselect("Группа клиентов", sorted(roles.cluster_id.unique()), key="cluster_filter",
+                                       placeholder="Все группы", format_func=lambda value: f"Группа {value}")
+        seed_filter = st.selectbox("В исходном списке", ["Все", "Да", "Нет"], key="seed_filter",
+                                  help="Исходный список — известные отправные точки расследования, отмечены ★.")
+        if role_filter or cluster_filter or seed_filter != "Все":
+            st.button("Сбросить фильтры", on_click=reset_filters, key="reset_filters", use_container_width=True)
         st.divider()
-        st.subheader("Выгрузки для проверки")
-        for name, path in zip(("Все клиенты · CSV", "Группы · CSV", "Приоритетный список · CSV"), required[:3]):
-            st.download_button(name, path.read_bytes(), file_name=path.name, mime="text/csv", use_container_width=True)
-        st.caption(f"В официальном списке {len(top)} клиентов. Очередь на экране пересчитывается по выбранным фильтрам, баллы не меняются.")
+        with st.expander("Скачать результаты · CSV"):
+            for name, path in zip(("Все клиенты", "Все группы", "Приоритетный список"), required[:3]):
+                st.download_button(name, path.read_bytes(), file_name=path.name, mime="text/csv", use_container_width=True)
+            st.caption(f"Приоритетный список содержит {len(top)} клиентов. Выгрузки полные и не зависят от фильтров экрана.")
 
     listing = filtered_nodes(roles, role_filter, cluster_filter, seed_filter)
     queue, detail = st.columns([1, 1.6], gap="large")
     with queue:
-        st.subheader("Кого проверить первым")
-        st.caption(f"Найдено {len(listing)} из {len(roles)} клиентов. В таблице первые 30 по приоритету.")
+        st.subheader("Очередь проверки")
+        raw_gid = st.text_input("Поиск по полному номеру клиента", key="client_search",
+                               placeholder="Введите или вставьте полный номер",
+                               help="Поиск охватывает всех клиентов, включая изоляты. Очистите поле, чтобы вернуться к очереди.")
+        if raw_gid.strip():
+            st.button("Вернуться к очереди", on_click=clear_search, key="clear_search", use_container_width=True)
+            st.caption("Открыт результат точного поиска. Фильтры очереди на него не влияют.")
+        st.caption(f"В очереди {len(listing)} из {len(roles)} клиентов · сначала наибольший приоритет")
         options = listing.gid.astype(str).tolist()
         if options:
             lookup = listing.set_index("gid")
-            selected = st.selectbox("Открыть клиента из очереди", options,
+            selected = st.selectbox("Клиент для проверки", options,
                 format_func=lambda value: f"{value} · {float(lookup.loc[int(value), 'priority_score']) * 100:.1f} балла",
-                key="client_select")
-            st.dataframe(client_table(listing.head(30)), hide_index=True, use_container_width=True, height=320)
+                key="client_select", disabled=bool(raw_gid.strip()))
+            st.dataframe(client_table(listing.head(30)), hide_index=True, use_container_width=True, height=290,
+                column_config={"Клиент": st.column_config.TextColumn("Клиент", width="medium"),
+                               "Приоритет / 100": st.column_config.ProgressColumn("Баллы", min_value=0, max_value=100, format="%.1f"),
+                               "В исходном списке": None})
+            st.caption("В таблице первые 30. Остальные доступны в списке выбора выше.")
         else:
             selected = None
             st.info("По выбранным фильтрам клиентов нет. Измените фильтры или найдите номер вручную.")
-        raw_gid = st.text_input("Поиск по полному номеру клиента (gid)", key="client_search",
-                               placeholder="Вставьте полный номер", help="Поиск по всей выборке, независимо от фильтров. Очистите поле, чтобы вернуться к очереди.")
     with detail:
         chosen = raw_gid.strip() or selected
         if chosen is None:
@@ -283,9 +366,15 @@ def main():
             st.warning(f"Клиент {gid} отсутствует в данных. Поиск охватывает все {len(roles)} клиентов, включая изоляты.")
             return
         row = found.iloc[0]
-        st.subheader(f"Клиент {gid}")
-        st.write(f"**{ROLE_NAMES.get(row.role, row.role)}** · приоритет **{float(row.priority_score) * 100:.1f} / 100** · группа {int(row.cluster_id)}")
-        st.caption("★ В исходном списке расследования" if bool(row.is_seed) else "Клиент вне исходного списка")
+        st.markdown('<div class="money-client"><div><div class="money-eyebrow">Карточка клиента</div>'
+                    f'<div class="money-id">{gid}</div></div><div class="money-score">'
+                    f'{float(row.priority_score) * 100:.1f}<small>приоритет / 100</small></div></div>', unsafe_allow_html=True)
+        tags = [ROLE_NAMES.get(row.role, row.role), f"Группа {int(row.cluster_id)}",
+                "★ Исходный список" if bool(row.is_seed) else "Вне исходного списка"]
+        if bool(node_value(row, "truncated_by_depth", False)):
+            tags.append("◇ Граница данных")
+        st.markdown('<div class="money-badges">' + ''.join(
+            f'<span class="money-badge">{escape(str(tag))}</span>' for tag in tags) + '</div>', unsafe_allow_html=True)
         st.markdown("**Почему обратить внимание**")
         st.write(review_reason(row))
         factors = {
@@ -299,10 +388,8 @@ def main():
         if strongest:
             st.write("Больше всего на приоритет повлияли: " + "; ".join(
                 f"{factors[key]} — {float(row[key]) * 100:.1f} балла" for key in strongest) + ".")
-        flow = st.columns(4)
-        for col, title, value in zip(flow, ["Получил в выборке", "Отправил в выборке", "Отправителей", "Получателей"],
-                                   [money(row.in_kzt), money(row.out_kzt), int(row.in_deg), int(row.out_deg)]):
-            col.metric(title, value)
+        stat_cards([("Получил в выборке", money(row.in_kzt)), ("Отправил в выборке", money(row.out_kzt)),
+                    ("Разных отправителей", int(row.in_deg)), ("Разных получателей", int(row.out_deg))], flow=True)
         if bool(node_value(row, "truncated_by_depth", False)):
             st.warning("Граница данных: на четвёртом шаге обход остановлен. Отсутствие исходящих не означает, что деньги остались у клиента.")
             next_request = "Запросить дальнейшие исходящие переводы за четвёртым шагом и полную историю счёта."
@@ -310,29 +397,38 @@ def main():
             next_request = "Запросить входящие переводы за пределами выборки: вход этого клиента известен не полностью."
         else:
             next_request = "Сверить полную историю счёта и переводы за соседние периоды, чтобы проверить предполагаемую роль."
-        st.write("**Следующий шаг:** " + next_request)
+        st.markdown('<div class="money-next"><strong>СЛЕДУЮЩИЙ ШАГ ПРОВЕРКИ</strong>'
+                    + escape(next_request) + '</div>', unsafe_allow_html=True)
         st.caption("Не видны другие банки и периоды, переводы ниже 5 000 ₸, остатки. У любого клиента могут отсутствовать входы извне; совпадение сумм и достижимость не доказывают маршрут тех же денег.")
 
-    network_tab, flows_tab, group_tab = st.tabs(["Связи на схеме", "Отправители и получатели", "Группа клиента"])
+    network_tab, flows_tab, group_tab, assistant_tab, audit_tab = st.tabs(
+        ["Схема связей", "Переводы", "Группа клиента", "Помощник", "Расчёт и основания"])
     with network_tab:
         controls = st.columns(2)
-        color_by = controls[0].radio("Цвет узлов", ["По ролям", "По группам"], horizontal=True, key="graph_color")
-        hops = controls[1].radio("Шагов от клиента", [1, 2], horizontal=True, key="graph_hops")
+        color_by = controls[0].radio("Раскраска схемы", ["По ролям", "По группам"], horizontal=True, key="graph_color")
+        hops = controls[1].radio("Показать связи", [1, 2], horizontal=True, key="graph_hops",
+                                format_func=lambda value: "Прямые" if value == 1 else "До двух шагов")
         visible, _ = neighborhood(edges, gid, hops)
         if color_by == "По ролям":
             legend = [(color, ROLE_NAMES[role]) for role, color in COLORS.items()]
         else:
             ids = sorted(roles.loc[roles.gid.isin(visible), "cluster_id"].unique())
             legend = [(cluster_color(int(group)), f"Группа {int(group)}") for group in ids]
-        st.markdown(" · ".join(f'<span style="color:{color}">●</span> {escape(label)}' for color, label in legend), unsafe_allow_html=True)
-        st.caption("Стрелки показывают направление перевода. ★ — исходный список, ◇ — граница данных. Подписи сокращены: полный номер и сумма доступны при наведении. Выбранный клиент выделен белой рамкой.")
+        st.markdown('<div class="money-legend">' + ''.join(
+            f'<span class="money-legend-item"><span class="money-dot" style="background:{color}"></span>{escape(label)}</span>'
+            for color, label in legend) + '</div>', unsafe_allow_html=True)
+        st.caption("Стрелка — направление денег · ★ исходный список · ◇ граница данных · белая рамка — выбранный клиент")
+        if int(row.in_deg) + int(row.out_deg) == 0:
+            st.info("У клиента нет наблюдаемых переводов. На схеме показан только он; это не означает отсутствие связей вне выборки.")
         html, hidden = graph_html(edges, roles, gid, hops, color_by)
         components.html(html, height=530, scrolling=True)
+        st.caption("Перетаскивайте узлы и меняйте масштаб. Наведите на узел для полного номера, на стрелку — для суммы переводов.")
         if hidden:
             st.info(f"Показано до 200 связанных узлов; скрыто {hidden}. Расчёты используют всю сеть.")
         if color_by == "По группам":
             st.caption("Цвет каждой группы постоянен; точный номер группы указан при наведении.")
     with flows_tab:
+        st.caption("Все наблюдаемые переводы выбранного клиента за период, начиная с наибольшей суммы.")
         for title, column, counterpart in [("От кого получил", "dst", "src"), ("Кому отправил", "src", "dst")]:
             transfers = edges.loc[edges[column].eq(gid)].sort_values("sum_kzt", ascending=False)
             st.markdown(f"**{title} · {len(transfers)} клиентов**")
@@ -342,7 +438,9 @@ def main():
                 peers = transfers[counterpart].map(roles.set_index("gid").role)
                 st.dataframe(pd.DataFrame({"Клиент": transfers[counterpart].astype(str),
                     "Сумма за период, ₸": transfers.sum_kzt, "Число переводов": transfers.n_tx,
-                    "Предполагаемая роль": peers.map(ROLE_NAMES)}), hide_index=True, use_container_width=True)
+                    "Предполагаемая роль": peers.map(ROLE_NAMES)}), hide_index=True, use_container_width=True,
+                    column_config={"Сумма за период, ₸": st.column_config.NumberColumn(format="localized"),
+                                   "Клиент": st.column_config.TextColumn(width="medium")})
         st.caption("Одна строка объединяет все переводы между парой клиентов за период. Это не список отдельных операций.")
     with group_tab:
         summary = clusters.loc[clusters.cluster_id.eq(row.cluster_id)]
@@ -376,7 +474,11 @@ def main():
                     file_name=f"group_{int(row.cluster_id)}_selected.csv", mime="text/csv",
                     key="group_download")
             st.caption("Группа объединяет клиентов по связности переводов, не доказывает общую деятельность. Встречные переводы складываются только при поиске групп; на схеме их направление сохранено.")
-    audit_panel(row, metadata)
+    with assistant_tab:
+        render_assistant(roles, edges, gid)
+    with audit_tab:
+        st.caption("Проверьте гипотезу по исходным числам. Оценки рассчитаны правилами; ниже сохранены условия, пороги и составляющие приоритета.")
+        audit_panel(row, metadata)
 
 
 if __name__ == "__main__":

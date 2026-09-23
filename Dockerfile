@@ -13,5 +13,6 @@ COPY starter/ starter/
 COPY run.py .
 COPY pipeline/ pipeline/
 COPY viz/ viz/
+COPY .streamlit/config.toml .streamlit/config.toml
 
 CMD ["python", "run.py", "--data", "/app/data", "--out", "/app/out"]

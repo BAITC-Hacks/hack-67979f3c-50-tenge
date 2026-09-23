@@ -1,6 +1,8 @@
 *
 !Dockerfile
 !requirements.txt
+!.streamlit/
+!.streamlit/config.toml
 !starter/
 !starter/**
 !run.py

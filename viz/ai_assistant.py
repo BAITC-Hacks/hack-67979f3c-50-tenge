@@ -5,7 +5,7 @@ import json
 from urllib.error import HTTPError, URLError
 
 import streamlit as st
-from viz.ai_transport import read_config, request_explanation, error_message
+from viz.ai_transport import read_config, request_explanation, error_message, AssistantResponseError
 
 NODE_FIELDS = (
     "gid", "depth", "is_seed", "role", "role_score", "role_rule", "evidence",
@@ -164,6 +164,8 @@ def render_assistant(roles, edges, selected_gid):
                     st.error(error_message(exc.code))
                 except (URLError, TimeoutError, OSError):
                     st.error("Не удалось связаться с OpenAI. Проверьте интернет и повторите запрос. Факты выше доступны без API.")
+                except AssistantResponseError as exc:
+                    st.warning(str(exc))
                 except (ValueError, TypeError, AttributeError):
                     st.warning("Ответ модели неполный или не соответствует формату и источникам. Он не показан. Уточните вопрос и повторите запрос.")
         saved = cache.get(fingerprint)

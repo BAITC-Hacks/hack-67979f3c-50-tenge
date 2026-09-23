@@ -6,6 +6,10 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 
+class AssistantResponseError(ValueError):
+    """Safe application-authored message; contains no provider body or secrets."""
+
+
 def read_config():
     """Read only the two supported settings; environment takes precedence."""
     config = {}
@@ -47,45 +51,42 @@ def error_message(status):
 def _fact_ids(context):
     facts = context.get("facts") if isinstance(context, dict) else None
     if not isinstance(facts, list) or not facts:
-        raise ValueError("В контексте отсутствуют факты для обоснования ответа.")
+        raise AssistantResponseError("В контексте отсутствуют факты для обоснования ответа.")
     identifiers = []
     for fact in facts:
         if not isinstance(fact, dict):
-            raise ValueError("Некорректный формат фактов в контексте.")
+            raise AssistantResponseError("Некорректный формат фактов в контексте.")
         identifier, text = fact.get("id"), fact.get("text")
         if not isinstance(identifier, str) or not identifier.strip() or len(identifier) > 128:
-            raise ValueError("Некорректный идентификатор факта в контексте.")
+            raise AssistantResponseError("Некорректный идентификатор факта в контексте.")
         if not isinstance(text, str) or not text.strip():
-            raise ValueError("В контексте есть факт без текста.")
+            raise AssistantResponseError("В контексте есть факт без текста.")
         identifiers.append(identifier)
     if len(set(identifiers)) != len(identifiers):
-        raise ValueError("Идентификаторы фактов в контексте повторяются.")
+        raise AssistantResponseError("Идентификаторы фактов в контексте повторяются.")
     return identifiers
 
 
 def _validate_answer(answer, fact_ids):
     fields = {"explanation", "evidence_ids", "next_steps", "insufficient_context"}
     if not isinstance(answer, dict) or set(answer) != fields:
-        raise ValueError("Ответ помощника не соответствует ожидаемой структуре.")
+        raise AssistantResponseError("Ответ помощника не соответствует ожидаемой структуре.")
     explanation = answer["explanation"]
     if not isinstance(explanation, str) or not explanation.strip() or len(explanation) > 900:
-        raise ValueError("Помощник вернул пустое или слишком длинное объяснение.")
+        raise AssistantResponseError("Помощник вернул пустое или слишком длинное объяснение.")
     if type(answer["insufficient_context"]) is not bool:
-        raise ValueError("Ответ помощника содержит неверный признак достаточности данных.")
+        raise AssistantResponseError("Ответ помощника содержит неверный признак достаточности данных.")
     evidence = answer["evidence_ids"]
     if not isinstance(evidence, list) or not 1 <= len(evidence) <= 64:
-        raise ValueError("Ответ должен ссылаться хотя бы на один факт из контекста.")
+        raise AssistantResponseError("Ответ должен ссылаться хотя бы на один факт из контекста.")
     if any(not isinstance(identifier, str) or identifier not in fact_ids for identifier in evidence):
-        raise ValueError("Ответ ссылается на факт, которого нет в переданных данных.")
-    if len(set(evidence)) != len(evidence):
-        raise ValueError("Ответ содержит повторяющиеся ссылки на факты.")
+        raise AssistantResponseError("Ответ ссылается на факт, которого нет в переданных данных.")
+    answer["evidence_ids"] = list(dict.fromkeys(evidence))
     steps = answer["next_steps"]
     if not isinstance(steps, list) or not 1 <= len(steps) <= 3:
-        raise ValueError("Помощник вернул неверный список следующих шагов.")
+        raise AssistantResponseError("Помощник вернул неверный список следующих шагов.")
     if any(not isinstance(step, str) or not step.strip() or len(step) > 600 for step in steps):
-        raise ValueError("Помощник вернул пустой или слишком длинный следующий шаг.")
-    if any(char.isdigit() for text in [explanation, *steps] for char in text):
-        raise ValueError("Числа должны отображаться из исходных фактов, а не генерироваться в объяснении.")
+        raise AssistantResponseError("Помощник вернул пустой или слишком длинный следующий шаг.")
     return answer
 
 
@@ -96,14 +97,14 @@ def request_explanation(api_key, model, question, context, instructions):
     arbitrary natural-language statements are entailed by the cited facts.
     """
     if not isinstance(question, str) or not question.strip() or len(question) > 2000:
-        raise ValueError("Вопрос должен содержать от 1 до 2000 символов.")
+        raise AssistantResponseError("Вопрос должен содержать от 1 до 2000 символов.")
     fact_ids = _fact_ids(context)
     schema = {
         "type": "object",
         "properties": {
-            "explanation": {"type": "string"},
-            "evidence_ids": {"type": "array", "items": {"type": "string", "enum": fact_ids}},
-            "next_steps": {"type": "array", "items": {"type": "string"}},
+            "explanation": {"type": "string", "minLength": 1, "maxLength": 900},
+            "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"type": "string", "enum": fact_ids}},
+            "next_steps": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "string", "minLength": 1, "maxLength": 600}},
             "insufficient_context": {"type": "boolean"},
         },
         "required": ["explanation", "evidence_ids", "next_steps", "insufficient_context"],
@@ -126,7 +127,7 @@ def request_explanation(api_key, model, question, context, instructions):
         body["input"] = json.dumps({"question": question.strip(), "context": context}, ensure_ascii=False, allow_nan=False)
         data = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
     except (TypeError, ValueError) as exc:
-        raise ValueError("Контекст не удалось подготовить к отправке.") from None
+        raise AssistantResponseError("Контекст не удалось подготовить к отправке.") from None
     request = Request(
         "https://api.openai.com/v1/responses", data=data, method="POST",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -135,37 +136,37 @@ def request_explanation(api_key, model, question, context, instructions):
         try:
             payload = json.load(response)
         except (ValueError, UnicodeError):
-            raise ValueError("OpenAI API вернул некорректный JSON.") from None
+            raise AssistantResponseError("OpenAI API вернул некорректный JSON.") from None
     if not isinstance(payload, dict) or payload.get("status") != "completed":
-        raise ValueError("Помощник не завершил ответ. Уточните вопрос и повторите запрос.")
+        raise AssistantResponseError("Помощник не завершил ответ. Уточните вопрос и повторите запрос.")
     output = payload.get("output")
     if not isinstance(output, list):
-        raise ValueError("OpenAI API не вернул содержимое ответа.")
+        raise AssistantResponseError("OpenAI API не вернул содержимое ответа.")
     texts = []
     for item in output:
         if not isinstance(item, dict):
-            raise ValueError("OpenAI API вернул некорректную структуру ответа.")
+            raise AssistantResponseError("OpenAI API вернул некорректную структуру ответа.")
         if item.get("type") != "message":
             continue
         content = item.get("content")
         if not isinstance(content, list):
-            raise ValueError("OpenAI API вернул сообщение без содержимого.")
+            raise AssistantResponseError("OpenAI API вернул сообщение без содержимого.")
         for part in content:
             if not isinstance(part, dict):
-                raise ValueError("OpenAI API вернул некорректную структуру сообщения.")
+                raise AssistantResponseError("OpenAI API вернул некорректную структуру сообщения.")
             if part.get("type") == "refusal":
-                raise ValueError("Модель отказалась формировать объяснение. Попробуйте уточнить вопрос.")
+                raise AssistantResponseError("Модель отказалась формировать объяснение. Попробуйте уточнить вопрос.")
             if part.get("type") == "output_text":
                 text = part.get("text")
                 if not isinstance(text, str):
-                    raise ValueError("OpenAI API вернул неверный текстовый ответ.")
+                    raise AssistantResponseError("OpenAI API вернул неверный текстовый ответ.")
                 texts.append(text)
     if not texts or not "".join(texts).strip():
-        raise ValueError("Помощник не вернул текстовое объяснение.")
+        raise AssistantResponseError("Помощник не вернул текстовое объяснение.")
     try:
         answer = json.loads("".join(texts))
     except ValueError:
-        raise ValueError("Объяснение помощника не удалось прочитать как JSON.") from None
+        raise AssistantResponseError("Объяснение помощника не удалось прочитать как JSON.") from None
     answer = _validate_answer(answer, set(fact_ids))
     raw_usage = payload.get("usage")
     usage = {}

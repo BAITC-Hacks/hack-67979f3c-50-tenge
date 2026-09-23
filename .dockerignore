@@ -3,6 +3,11 @@
 !requirements.txt
 !starter/
 !starter/**
+!run.py
+!pipeline/
+!pipeline/**
+!viz/
+!viz/**
 !pipeline/
 !pipeline/**
 !run.py

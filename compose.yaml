@@ -5,3 +5,12 @@ services:
       - ./data:/app/data:ro
       - ./out:/app/out
     restart: "no"
+  dashboard:
+    build: .
+    command: ["streamlit", "run", "viz/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data:ro
+      - ./out:/app/out:ro
+    restart: "no"

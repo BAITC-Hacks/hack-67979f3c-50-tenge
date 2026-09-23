@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-label="Данные, граф, метрики, роли, приоритет, CSV, интерфейс">
+<rect width="1200" height="340" fill="#f8fafc"/>
+<style>text{font:20px Arial,sans-serif;fill:#10233d}.sub{font:15px Arial,sans-serif;fill:#475569}.box{fill:white;stroke:#2563eb;stroke-width:2;rx:14}.arrow{stroke:#64748b;stroke-width:3;fill:none;marker-end:url(#head)}</style>
+<defs><marker id="head" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#64748b"/></marker></defs>
+<text x="36" y="43" font-size="27" font-weight="bold">Граф денег: от данных к проверяемой гипотезе</text>
+<rect class="box" x="30" y="92" width="176" height="145"/><text x="49" y="140">3 parquet</text><text class="sub" x="49" y="174">узлы · рёбра</text><text class="sub" x="49" y="198">транзакции</text>
+<path class="arrow" d="M211 164 H241"/>
+<rect class="box" x="246" y="92" width="176" height="145"/><text x="265" y="140">Граф</text><text class="sub" x="265" y="174">направленный</text><text class="sub" x="265" y="198">+ изоляты</text>
+<path class="arrow" d="M427 164 H457"/>
+<rect class="box" x="462" y="92" width="176" height="145"/><text x="481" y="140">Метрики</text><text class="sub" x="481" y="174">суммы · степени</text><text class="sub" x="481" y="198">пути · seed</text>
+<path class="arrow" d="M643 164 H673"/>
+<rect class="box" x="678" y="92" width="176" height="145"/><text x="697" y="140">Вывод</text><text class="sub" x="697" y="174">роли · кластеры</text><text class="sub" x="697" y="198">приоритет</text>
+<path class="arrow" d="M859 164 H889"/>
+<rect class="box" x="894" y="92" width="270" height="145"/><text x="913" y="140">Интерфейс</text><text class="sub" x="913" y="174">3 CSV · поиск gid</text><text class="sub" x="913" y="198">стрелки · объяснение</text>
+<text class="sub" x="34" y="294">Ограничения: глубина 4 · неполные входы seed · порог 5 000 KZT. Результат — гипотеза для проверки.</text>
+</svg>

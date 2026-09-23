@@ -10,5 +10,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY starter/ starter/
+COPY run.py .
+COPY pipeline/ pipeline/
+COPY viz/ viz/
 
-CMD ["python", "starter/starter.py", "--data", "/app/data", "--out", "/app/out"]
+CMD ["python", "run.py", "--data", "/app/data", "--out", "/app/out"]

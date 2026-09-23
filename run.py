@@ -1,6 +1,9 @@
 """One-command graph analysis pipeline."""
 
 import argparse
+import json
+import sys
+from importlib.metadata import version
 from pathlib import Path
 from time import perf_counter
 
@@ -46,6 +49,8 @@ def main(data_dir: Path, out_dir: Path) -> None:
     seeds = compute_seed_reach(graph, nodes)
     enriched = _merge_nodes(features, seeds, "seed metrics")
     roles = assign_roles(enriched)
+    thresholds = roles.attrs.get("role_thresholds", {})
+    candidate_counts = roles.attrs.get("role_candidate_counts", {})
     clusters = assign_clusters(graph, nodes)
     with_clusters = _merge_nodes(roles, clusters, "clusters")
     scored = compute_priority(with_clusters)
@@ -54,6 +59,18 @@ def main(data_dir: Path, out_dir: Path) -> None:
     cluster_summary = summarize_clusters(graph, scored)
     top = make_top_nodes(scored, limit=30)
     write_outputs(scored, cluster_summary, top, out_dir)
+    metadata = {
+        "role_thresholds": thresholds,
+        "role_candidate_counts": candidate_counts,
+        "cluster_seed": 42,
+        "nodes": len(nodes), "edges": len(edges), "transactions": len(transactions),
+        "duration_seconds": round(perf_counter() - started, 3),
+        "versions": {"python": sys.version.split()[0], **{
+            package: version(package) for package in
+            ("pandas", "numpy", "networkx", "pyarrow", "scipy")}},
+    }
+    (out_dir / "run_metadata.json").write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Готово: {len(scored)} узлов, {len(cluster_summary)} кластеров, "
           f"{len(top)} в top; {perf_counter() - started:.2f} с")
 

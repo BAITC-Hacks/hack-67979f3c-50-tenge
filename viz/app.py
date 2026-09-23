@@ -1,5 +1,6 @@
 """Local analyst dashboard over completed CSV exports."""
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -35,6 +36,7 @@ def load_tables(stamps: tuple[int, ...]):
         pd.read_csv(OUT / "clusters.csv"),
         pd.read_csv(OUT / "top_nodes.csv"),
         pd.read_parquet(DATA / "edges.parquet"),
+        json.loads((OUT / "run_metadata.json").read_text(encoding="utf-8")),
     )
 
 
@@ -91,12 +93,12 @@ def main():
     st.title("Граф денег")
     st.caption("Гипотезы для проверки по наблюдаемым переводам, не вывод о виновности.")
     required = [OUT / name for name in ("nodes_roles.csv", "clusters.csv", "top_nodes.csv")]
-    required.append(DATA / "edges.parquet")
+    required.extend([DATA / "edges.parquet", OUT / "run_metadata.json"])
     missing = [str(p.relative_to(ROOT)) for p in required if not p.exists()]
     if missing:
         st.error("Нет файлов: " + ", ".join(missing) + ". Сначала выполните python run.py --data data --out out")
         st.stop()
-    roles, clusters, top, edges = load_tables(tuple(_stamp(p) for p in required))
+    roles, clusters, top, edges, metadata = load_tables(tuple(_stamp(p) for p in required))
     if not roles.gid.is_unique:
         st.error("В nodes_roles.csv повторяются gid")
         st.stop()
@@ -114,6 +116,8 @@ def main():
         listing = listing[listing.cluster_id.isin(cluster_filter)]
     if seed_filter != "Все":
         listing = listing[listing.is_seed.eq(seed_filter == "Да")]
+    listing = listing.copy()
+    listing["gid"] = listing.gid.astype(str)
     st.dataframe(listing, hide_index=True, use_container_width=True)
 
     st.subheader("Карточка узла")
@@ -132,13 +136,33 @@ def main():
     st.markdown(f"**{ROLE_NAMES.get(role, role)}** · score роли {float(node_value(row, 'role_score', 0)):.3f} · "
                 f"приоритет {float(node_value(row, 'priority_score', 0)):.3f}")
     st.write("Основание:", node_value(row, "evidence"))
-    st.write("Правило и порог:", node_value(row, "role_rule"))
-    st.caption("Численные пороги и формула правила приведены в docs/roles.md; фактические метрики ниже.")
+    rule = str(node_value(row, "role_rule"))
+    thresholds = metadata.get("role_thresholds", {})
+    st.write("Правило:", rule)
+    if rule in {"boundary_consolidator", "consolidator"}:
+        st.write("Порог входящей суммы Q75:", thresholds.get("in_kzt_q75"), "KZT; "
+                 "входящая степень ≥3")
+    elif rule == "coordinator":
+        st.write("Порог betweenness Q95:", thresholds.get("betweenness_q95"),
+                 "; достижимость ≥2 seed")
+    elif rule == "distributor":
+        st.write("Порог исходящей степени: ≥5")
+    elif rule == "transit":
+        st.write("Порог отношения исходящего к входящему: 0.7–1.3")
+    elif rule == "terminal":
+        st.write("Порог: входящая степень >0, исходящая =0, глубина <4")
+    elif rule == "boundary_unknown":
+        st.write("Граница: глубина =4 и исходящая степень =0")
+    elif rule == "isolated":
+        st.write("Порог: входящая и исходящая степени =0")
+    else:
+        st.write("Ни одно из основных правил не выполнено")
+    st.caption("Полные условия и порядок правил: docs/roles.md. Фактические метрики ниже.")
     fields = ["in_deg", "out_deg", "in_tx", "out_tx", "in_kzt", "out_kzt", "depth",
               "is_seed", "truncated_by_depth", "pagerank", "betweenness", "seed_reach_count",
               "seed_distance", "pass_through", "priority_volume", "priority_bridge",
               "priority_seed", "priority_degree"]
-    st.dataframe(pd.DataFrame([{"Метрика": field, "Значение": node_value(row, field)}
+    st.dataframe(pd.DataFrame([{"Метрика": field, "Значение": str(node_value(row, field))}
                                for field in fields]), hide_index=True)
     if bool(node_value(row, "truncated_by_depth", False)):
         st.warning("Граница обхода: отсутствие исходящих переводов на глубине 4 не означает удержание денег.")

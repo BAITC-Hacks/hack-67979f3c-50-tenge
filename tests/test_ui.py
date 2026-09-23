@@ -70,3 +70,27 @@ def test_display_keeps_ids_and_translates_roles(ui_data):
     html, _ = app.graph_html(edges, nodes, gid, 1, "По группам")
     assert str(gid) in html
     assert "группа" in html or "\\u0433\\u0440\\u0443\\u043f\\u043f\\u0430" in html
+
+
+def test_group_selection_and_new_user_help(ui_data, monkeypatch):
+    output, nodes, _ = ui_data
+    monkeypatch.setattr(app, "OUT", output)
+    app.load_tables.clear()
+    screen = AppTest.from_string("import viz.app as app\napp.main()", default_timeout=30).run()
+    assert not screen.exception
+    selected_client = int(screen.selectbox(key="client_select").value)
+    cluster_id = int(nodes.loc[nodes.gid.eq(selected_client), "cluster_id"].iloc[0])
+    all_members = app.group_members(nodes, cluster_id)
+    assert len(all_members) >= 2
+
+    screen.toggle(key="show_help").set_value(True).run()
+    assert not screen.exception
+    assert any("С чего начать" in item.value for item in screen.markdown)
+
+    screen.radio(key="group_mode").set_value("Выбрать клиентов").run()
+    ids = all_members.gid.astype(str).tolist()[:2]
+    screen.multiselect(key=f"group_clients_{cluster_id}").set_value(ids).run()
+    assert not screen.exception
+    assert set(app.group_members(nodes, cluster_id, ids).gid.astype(str)) == set(ids)
+    assert len(app.group_members(nodes, cluster_id, ids[:1])) == 1
+    assert len(app.group_members(nodes, cluster_id)) == len(all_members)

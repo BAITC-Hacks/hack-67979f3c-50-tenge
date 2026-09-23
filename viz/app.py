@@ -102,6 +102,14 @@ def filtered_nodes(roles, selected_roles, selected_clusters, seed_filter):
     return result.sort_values(["priority_score", "gid"], ascending=[False, True]).copy()
 
 
+def group_members(roles, cluster_id, selected_ids=None):
+    """Return all or selected members in priority order, preserving int64 gid."""
+    members = roles.loc[roles.cluster_id.eq(cluster_id)]
+    if selected_ids is not None:
+        members = members.loc[members.gid.astype(str).isin(selected_ids)]
+    return members.sort_values(["priority_score", "gid"], ascending=[False, True]).copy()
+
+
 def graph_html(edges, roles, gid, hops, color_by="По ролям"):
     visible, hidden = neighborhood(edges, gid, hops)
     table = roles.set_index("gid")
@@ -213,6 +221,24 @@ def main():
         col.metric(title, value)
     st.caption("Сумма переводов учитывает каждый перевод: одни и те же деньги могли пройти через несколько клиентов.")
     with st.sidebar:
+        if st.toggle("❔ Как пользоваться", key="show_help", help="Краткая инструкция и значение основных терминов"):
+            st.markdown("""
+**С чего начать**
+
+1. Посмотрите «Кого проверить первым» и выберите клиента из очереди.
+2. Если известен номер клиента, вставьте его в поиск: он работает по всей выборке.
+3. Откройте «Связи на схеме», чтобы увидеть направление переводов.
+4. Во вкладке «Группа клиентов» покажите всю группу или выберите одного либо нескольких участников.
+
+**Что означают слова**
+
+- **Группа** — клиенты, объединённые наблюдаемыми связями; это гипотеза, не доказательство совместной деятельности.
+- **Приоритет** — баллы для очереди проверки, не вероятность нарушения.
+- **★** — клиент из исходного списка; **◇** — граница данных на четвёртом шаге.
+
+Данные не охватывают другие банки, соседние периоды и переводы ниже 5 000 ₸.
+""")
+        st.divider()
         st.header("Область проверки")
         st.caption("Фильтры применяются ко всем клиентам. Исходный список — отправные точки расследования, обозначены ★.")
         role_filter = st.multiselect("Предполагаемая роль", sorted(roles.role.unique()),
@@ -328,8 +354,27 @@ def main():
             group_metrics[1].metric("Из исходного списка", int(group.n_seed))
             group_metrics[2].metric("Переводы внутри группы", money(group.sum_kzt_internal))
             st.write("**Гипотеза по данным:**", group.hypothesis)
-            members = roles.loc[roles.cluster_id.eq(row.cluster_id)].sort_values(["priority_score", "gid"], ascending=[False, True])
-            st.dataframe(client_table(members), hide_index=True, use_container_width=True)
+            all_members = group_members(roles, row.cluster_id)
+            mode = st.radio("Кого показать в группе", ["Всю группу", "Выбрать клиентов"],
+                            horizontal=True, key="group_mode",
+                            help="Вся группа откроется одной кнопкой. В ручном выборе можно указать одного или нескольких клиентов по номеру.")
+            if mode == "Всю группу":
+                members = all_members
+            else:
+                chosen_ids = st.multiselect("Клиенты для просмотра", all_members.gid.astype(str).tolist(),
+                    key=f"group_clients_{int(row.cluster_id)}", placeholder="Введите номер и выберите одного или нескольких",
+                    help="Поиск принимает полный номер клиента. Ненужный выбор можно удалить крестиком.")
+                members = group_members(roles, row.cluster_id, chosen_ids)
+            st.caption(f"Выбрано {len(members)} из {len(all_members)} клиентов группы. "
+                       "Таблица отсортирована по приоритету проверки.")
+            if members.empty:
+                st.info("Пока никто не выбран. Введите номер клиента или переключитесь на «Всю группу».")
+            else:
+                st.dataframe(client_table(members), hide_index=True, use_container_width=True)
+                st.download_button("Скачать выбранных клиентов · CSV",
+                    members.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"group_{int(row.cluster_id)}_selected.csv", mime="text/csv",
+                    key="group_download")
             st.caption("Группа объединяет клиентов по связности переводов, не доказывает общую деятельность. Встречные переводы складываются только при поиске групп; на схеме их направление сохранено.")
     audit_panel(row, metadata)
 

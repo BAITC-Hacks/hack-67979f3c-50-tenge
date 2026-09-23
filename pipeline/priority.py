@@ -18,6 +18,10 @@ def _validate_nodes(df: pd.DataFrame, required: set[str]) -> None:
         raise ValueError(f"Не хватает колонок: {', '.join(sorted(missing))}")
     if df["gid"].isna().any() or df["gid"].duplicated().any():
         raise ValueError("gid должен быть заполнен и уникален")
+    if len(df) and (not pd.api.types.is_integer_dtype(df.gid.dtype)
+                    or pd.api.types.is_bool_dtype(df.gid.dtype)
+                    or df.gid.min() < -(2**63) or df.gid.max() > 2**63 - 1):
+        raise ValueError("gid должны быть целыми числами в диапазоне int64; float запрещён")
     if not df["is_seed"].isin([True, False, 0, 1]).all():
         raise ValueError("is_seed должен содержать только bool или 0/1")
 

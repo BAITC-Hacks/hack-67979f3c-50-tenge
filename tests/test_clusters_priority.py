@@ -121,6 +121,32 @@ def test_top_seed_policy_and_tie_order():
     assert set(top.gid).isdisjoint(set(source.loc[source.is_seed, "gid"]))
 
 
+def test_fractional_identifiers_cannot_silently_merge_clients():
+    nodes = pd.DataFrame({"gid": [1.2, 1.8], "is_seed": [True, False]})
+    graph = nx.DiGraph()
+    graph.add_edge(1.2, 1.8, sum_kzt=5000)
+    for function in [assign_clusters, compute_seed_reach]:
+        with pytest.raises(ValueError, match="int64"):
+            function(graph, nodes)
+    features = priority_fixture()
+    features["gid"] = features.gid.astype(float)
+    with pytest.raises(ValueError, match="int64"):
+        compute_priority(features)
+
+
+def test_adjacent_large_ids_are_preserved_exactly():
+    left, right = 2**63 - 2, 2**63 - 1
+    nodes = pd.DataFrame({"gid": [left, right], "is_seed": [True, False]})
+    graph = nx.DiGraph()
+    graph.add_edge(left, right, sum_kzt=5000)
+    assert set(assign_clusters(graph, nodes).gid) == {left, right}
+    reach = compute_seed_reach(graph, nodes).set_index("gid")
+    assert reach.loc[right, "seed_reach_count"] == 1
+    features = priority_fixture().iloc[:2].copy()
+    features["gid"] = [left, right]
+    assert set(make_top_nodes(compute_priority(features)).gid).issubset({left, right})
+
+
 def test_real_data_b_modules_and_export_contract(tmp_path):
     """Real flows; synthetic role labels ONLY to test the B export contract.
 
@@ -155,6 +181,11 @@ def test_real_data_b_modules_and_export_contract(tmp_path):
     assert nx.number_of_isolates(graph) == 19
     assert nx.number_weakly_connected_components(graph) == 35
     assert len(top) == 30
+    # Fixed algorithm settings and stable ordering must survive input shuffles.
+    shuffled_graph = nx.DiGraph()
+    shuffled_graph.add_nodes_from(reversed(list(graph)))
+    shuffled_graph.add_edges_from(reversed(list(graph.edges(data=True))))
+    assert_frame_equal(clusters, assign_clusters(shuffled_graph, nodes.iloc[::-1]))
     for row in summary.itertuples(index=False):
         members = set(scored.loc[scored.cluster_id == row.cluster_id, "gid"])
         assert nx.is_weakly_connected(graph.subgraph(members))
@@ -173,3 +204,30 @@ def test_real_data_b_modules_and_export_contract(tmp_path):
     write_outputs(again, summary_again, top_again, tmp_path / "second")
     for name in ["nodes_roles.csv", "clusters.csv", "top_nodes.csv"]:
         assert (tmp_path / "first" / name).read_bytes() == (tmp_path / "second" / name).read_bytes()
+    # Exact large identifiers must survive CSV; never pass them through float.
+    restored = pd.read_csv(tmp_path / "first" / "nodes_roles.csv")
+    assert restored.gid.dtype == "int64"
+    assert set(restored.gid) == set(nodes.gid)
+
+    # Reproducible diagnostics: measure sensitivity, do not assert an arbitrary
+    # quality threshold or tune the algorithm to a fixed expected cluster count.
+    sensitivity = {"resolutions": [], "weights": [], "selection": dict(top.attrs)}
+    for resolution in [.8, 1., 1.2]:
+        mapping = assign_clusters(graph, nodes, resolution=resolution)
+        sizes = mapping.groupby("cluster_id").size()
+        sensitivity["resolutions"].append({"resolution": resolution,
+                                           "clusters": len(sizes), "largest": int(sizes.max())})
+    weights = {"priority_volume": .35, "priority_bridge": .30,
+               "priority_seed": .20, "priority_degree": .15}
+    for column, weight in weights.items():
+        for factor in [.8, 1.2]:
+            variant = scored.copy()
+            normalizer = 1 + weight * (factor - 1)
+            for contribution in weights:
+                variant[contribution] *= (factor if contribution == column else 1) / normalizer
+            variant["priority_score"] = variant[list(weights)].sum(axis=1)
+            alternative = make_top_nodes(variant)
+            sensitivity["weights"].append({"column": column, "factor": factor,
+                "top30_overlap": len(set(top.gid) & set(alternative.gid)),
+                "selection_policy": alternative.attrs["selection_policy"]})
+    (tmp_path / "sensitivity.json").write_text(json.dumps(sensitivity, indent=2), encoding="utf-8")

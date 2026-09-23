@@ -17,6 +17,10 @@ def compute_seed_reach(G: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Нужны колонки gid и is_seed")
     if nodes.gid.isna().any() or nodes.gid.duplicated().any():
         raise ValueError("gid должны быть заполнены и уникальны")
+    if len(nodes) and (not pd.api.types.is_integer_dtype(nodes.gid.dtype)
+                       or pd.api.types.is_bool_dtype(nodes.gid.dtype)
+                       or nodes.gid.min() < -(2**63) or nodes.gid.max() > 2**63 - 1):
+        raise ValueError("gid должны быть целыми числами в диапазоне int64; float запрещён")
     if nodes.is_seed.isna().any() or not nodes.is_seed.isin([True, False]).all():
         raise ValueError("is_seed должен содержать bool или 0/1")
     gids = nodes.gid.tolist()

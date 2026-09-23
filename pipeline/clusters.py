@@ -29,6 +29,10 @@ def _validate_nodes(G: nx.DiGraph, nodes: pd.DataFrame) -> None:
         raise ValueError("В таблице отсутствует gid")
     if nodes["gid"].isna().any() or nodes["gid"].duplicated().any():
         raise ValueError("gid должны быть заполнены и уникальны")
+    if len(nodes) and (not pd.api.types.is_integer_dtype(nodes.gid.dtype)
+                       or pd.api.types.is_bool_dtype(nodes.gid.dtype)
+                       or nodes.gid.min() < -(2**63) or nodes.gid.max() > 2**63 - 1):
+        raise ValueError("gid должны быть целыми числами в диапазоне int64; float запрещён")
     if set(nodes["gid"]) != set(G):
         raise ValueError("Множество gid таблицы и графа должно совпадать, включая изоляты")
 

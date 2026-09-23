@@ -236,3 +236,30 @@ def test_collectors_shortcut_and_secondary_signals(ui_data, monkeypatch):
     assert any('Дополнительные признаки' in item.value for item in screen.markdown)
     for _, boundary in nodes[nodes.truncated_by_depth].iterrows():
         assert 'terminal' not in app.secondary_signals(boundary, metadata)
+
+
+def test_direct_flow_overview_and_navigation(ui_data, monkeypatch):
+    from viz.flow_overview import direct_flows
+    output, nodes, edges = ui_data
+    monkeypatch.setattr(app, 'OUT', output)
+    app.load_tables.clear()
+    row = nodes.sort_values(['priority_score', 'gid'], ascending=[False, True]).iloc[0]
+    gid = int(row.gid)
+    incoming, outgoing = direct_flows(edges, gid)
+    assert len(incoming[0]) <= 5 and len(outgoing[0]) <= 5
+    assert outgoing[1] > 5
+    full = direct_flows(edges, gid, None)
+    assert len(full[1][0]) == outgoing[1]
+    assert full[1][0].sum_kzt.is_monotonic_decreasing
+    screen = AppTest.from_string('import viz.app as app\napp.main()', default_timeout=30).run()
+    assert not screen.exception
+    screen.toggle(key=f'flow_all_{gid}').set_value(True).run()
+    assert not screen.exception
+    peer = int(outgoing[0].dst.iloc[0])
+    screen.button(key=f'flow_{gid}_out_{peer}').click().run()
+    assert not screen.exception
+    assert screen.text_input(key='client_search').value == str(peer)
+    sample = pd.DataFrame({'src': [gid, gid, peer], 'dst': [gid, peer, gid],
+                           'sum_kzt': [100., 20., 30.], 'n_tx': [1, 1, 1]})
+    sides = direct_flows(sample, gid, None)
+    assert [count for _, count in sides] == [1, 1]

@@ -2,6 +2,7 @@
 
 import json
 import colorsys
+import math
 import sys
 from html import escape
 from pathlib import Path
@@ -18,6 +19,7 @@ if str(ROOT) not in sys.path:
 from viz.ai_assistant import render_assistant
 from viz.cluster_quality import render_cluster_quality
 from viz.bonus_panels import render_bonus_panels
+from viz.flow_overview import render_flow_overview
 from viz.graph_agent import render_graph_agent
 from pipeline.roles import role_candidates
 
@@ -196,9 +198,26 @@ def group_members(roles, cluster_id, selected_ids=None):
 def graph_html(edges, roles, gid, hops, color_by="По ролям"):
     visible, hidden = neighborhood(edges, gid, hops)
     table = roles.set_index("gid")
-    graph = Network(height="510px", width="100%", directed=True,
+    graph = Network(height="620px", width="100%", directed=True,
                     bgcolor="#0f192b", font_color="#e5edf8", cdn_resources="in_line")
-    graph.barnes_hut()
+    graph.set_options(json.dumps({
+        "physics": {"enabled": False},
+        "interaction": {"hover": True, "tooltipDelay": 120, "keyboard": True,
+                        "hideEdgesOnDrag": False},
+        "nodes": {"shape": "dot", "font": {"size": 22, "strokeWidth": 4,
+                  "strokeColor": "#0f192b"}, "scaling": {"label": {"drawThreshold": 5}}},
+        "edges": {"smooth": {"enabled": True, "type": "continuous", "roundness": 0.12},
+                  "selectionWidth": 3},
+    }))
+    peers = sorted(visible - {gid}, key=lambda n: (
+        -float(table.loc[n, "priority_score"]) if n in table.index else 0, n))
+    positions = {gid: (0, 0)}
+    for i, node_id in enumerate(peers):
+        ring, offset = divmod(i, 24)
+        count = min(24, len(peers) - ring * 24)
+        angle = 2 * math.pi * offset / count + ring * .13
+        radius = 270 + ring * 160
+        positions[node_id] = (1.65 * radius * math.cos(angle), .85 * radius * math.sin(angle))
     for node_id in sorted(visible):
         if node_id not in table.index:
             continue
@@ -215,17 +234,39 @@ def graph_html(edges, roles, gid, hops, color_by="По ролям"):
             label = "Выбранный\n" + label
         graph.add_node(str(node_id), label=label,
                        color={"background": color, "border": "#f8fafc" if node_id == gid else color},
-                       size=15 + 25 * score, borderWidth=4 if node_id == gid else 1,
+                       size=44 if node_id == gid else 19 + 12 * score,
+                       x=positions[node_id][0], y=positions[node_id][1],
+                       borderWidth=4 if node_id == gid else 1,
                        title=f"Клиент {node_id}<br>{escape(ROLE_NAMES.get(role, role))}<br>"
                              f"Приоритет: {score * 100:.1f} / 100; группа {cluster}<br>"
                              f"В исходном списке: {'да' if seed else 'нет'}; "
                              f"граница данных: {'да' if boundary else 'нет'}")
     subset = edges[edges.src.isin(visible) & edges.dst.isin(visible)]
+    max_amount = max(float(subset.sum_kzt.max()) if len(subset) else 1, 1)
     for edge in subset.itertuples(index=False):
         title = f"{edge.src} → {edge.dst}<br>{money(edge.sum_kzt)}; {int(edge.n_tx)} переводов"
-        graph.add_edge(str(int(edge.src)), str(int(edge.dst)), arrows="to", title=title,
-                       color="#94a3b8")
-    return graph.generate_html(), hidden
+        direction_color = "#60a5fa" if int(edge.dst) == gid else "#fbbf24" if int(edge.src) == gid else "#64748b"
+        graph.add_edge(str(int(edge.src)), str(int(edge.dst)),
+                       arrows={"to": {"enabled": True, "scaleFactor": 1.15}}, title=title,
+                       width=1 + 3 * math.sqrt(float(edge.sum_kzt) / max_amount),
+                       color={"color": direction_color, "highlight": "#ffffff", "opacity": .75})
+    html = graph.generate_html()
+    style = """<style>html,body{margin:0;background:#0f192b;color:#e5edf8;font-family:system-ui}
+    .card{border:0!important;background:#0f192b!important}#mynetwork{border:0!important}
+    #graph-tools{display:flex;gap:8px;padding:12px;flex-wrap:wrap}
+    #graph-tools button{background:#1e293b;color:#e5edf8;border:1px solid #475569;
+    border-radius:8px;padding:8px 12px;cursor:pointer}#graph-tools button:hover{background:#334155}
+    #graph-help{padding:0 12px 10px;font-size:13px;color:#cbd5e1}</style>"""
+    toolbar = """<div id="graph-tools">
+    <button onclick="network.fit({animation:true})">Вся схема</button>
+    <button onclick='network.focus(CENTER_ID,{scale:0.9,animation:true})'>К выбранному клиенту</button>
+    <button onclick="network.moveTo({scale:network.getScale()*1.3})" aria-label="Приблизить">＋</button>
+    <button onclick="network.moveTo({scale:network.getScale()/1.3})" aria-label="Отдалить">−</button>
+    </div><div id="graph-help">Синие стрелки — поступления выбранному клиенту · жёлтые — его отправления.
+    Толщина — сумма по связи. Расположение колец условное, не глубина переводов. Полные номера и суммы — при наведении.</div>""".replace("CENTER_ID", json.dumps(str(gid)))
+    html = html.replace("</head>", style + "</head>")
+    html = html.replace("<body>", "<body>" + toolbar)
+    return html, hidden
 
 
 def review_reason(row):
@@ -455,29 +496,33 @@ def main():
     network_tab, flows_tab, group_tab, bonus_tab, assistant_tab, audit_tab = st.tabs(
         ["Схема связей", "Переводы", "Группа клиента", "Дополнительный анализ", "Помощник", "Расчёт и основания"])
     with network_tab:
-        controls = st.columns(2)
-        color_by = controls[0].radio("Раскраска схемы", ["По ролям", "По группам"], horizontal=True, key="graph_color")
-        hops = controls[1].radio("Показать связи", [1, 2], horizontal=True, key="graph_hops",
-                                format_func=lambda value: "Прямые" if value == 1 else "До двух шагов")
-        visible, _ = neighborhood(edges, gid, hops)
-        if color_by == "По ролям":
-            legend = [(color, ROLE_NAMES[role]) for role, color in COLORS.items()]
-        else:
-            ids = sorted(roles.loc[roles.gid.isin(visible), "cluster_id"].unique())
-            legend = [(cluster_color(int(group)), f"Группа {int(group)}") for group in ids]
-        st.markdown('<div class="money-legend">' + ''.join(
-            f'<span class="money-legend-item"><span class="money-dot" style="background:{color}"></span>{escape(label)}</span>'
-            for color, label in legend) + '</div>', unsafe_allow_html=True)
-        st.caption("Стрелка — направление денег · ★ исходный список · ◇ граница данных · белая рамка — выбранный клиент")
-        if int(row.in_deg) + int(row.out_deg) == 0:
-            st.info("У клиента нет наблюдаемых переводов. На схеме показан только он; это не означает отсутствие связей вне выборки.")
-        html, hidden = graph_html(edges, roles, gid, hops, color_by)
-        components.html(html, height=530, scrolling=True)
-        st.caption("Перетаскивайте узлы и меняйте масштаб. Наведите на узел для полного номера, на стрелку — для суммы переводов.")
-        if hidden:
-            st.info(f"Показано до 200 связанных узлов; скрыто {hidden}. Расчёты используют всю сеть.")
-        if color_by == "По группам":
-            st.caption("Цвет каждой группы постоянен; точный номер группы указан при наведении.")
+        overview, full_graph = st.tabs(["Понятная схема потоков", "Полная сеть"])
+        with overview:
+            render_flow_overview(edges, roles, row, ROLE_NAMES)
+        with full_graph:
+            controls = st.columns(2)
+            color_by = controls[0].radio("Раскраска схемы", ["По ролям", "По группам"], horizontal=True, key="graph_color")
+            hops = controls[1].radio("Показать связи", [1, 2], horizontal=True, key="graph_hops",
+                                    format_func=lambda value: "Прямые" if value == 1 else "До двух шагов")
+            visible, _ = neighborhood(edges, gid, hops)
+            if color_by == "По ролям":
+                legend = [(color, ROLE_NAMES[role]) for role, color in COLORS.items()]
+            else:
+                ids = sorted(roles.loc[roles.gid.isin(visible), "cluster_id"].unique())
+                legend = [(cluster_color(int(group)), f"Группа {int(group)}") for group in ids]
+            st.markdown('<div class="money-legend">' + ''.join(
+                f'<span class="money-legend-item"><span class="money-dot" style="background:{color}"></span>{escape(label)}</span>'
+                for color, label in legend) + '</div>', unsafe_allow_html=True)
+            st.caption("Стрелка — направление денег · ★ исходный список · ◇ граница данных · белая рамка — выбранный клиент")
+            if int(row.in_deg) + int(row.out_deg) == 0:
+                st.info("У клиента нет наблюдаемых переводов. На схеме показан только он; это не означает отсутствие связей вне выборки.")
+            html, hidden = graph_html(edges, roles, gid, hops, color_by)
+            components.html(html, height=750, scrolling=False)
+            st.caption("Перетаскивайте узлы и меняйте масштаб. Наведите на узел для полного номера, на стрелку — для суммы переводов.")
+            if hidden:
+                st.info(f"Показано до 200 связанных узлов; скрыто {hidden}. Расчёты используют всю сеть.")
+            if color_by == "По группам":
+                st.caption("Цвет каждой группы постоянен; точный номер группы указан при наведении.")
     with flows_tab:
         st.caption("Все наблюдаемые переводы выбранного клиента за период, начиная с наибольшей суммы.")
         for title, column, counterpart in [("От кого получил", "dst", "src"), ("Кому отправил", "src", "dst")]:

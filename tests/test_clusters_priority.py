@@ -231,3 +231,17 @@ def test_real_data_b_modules_and_export_contract(tmp_path):
                 "top30_overlap": len(set(top.gid) & set(alternative.gid)),
                 "selection_policy": alternative.attrs["selection_policy"]})
     (tmp_path / "sensitivity.json").write_text(json.dumps(sensitivity, indent=2), encoding="utf-8")
+
+
+def test_cluster_hypotheses_thresholds_and_next_steps():
+    graph = nx.DiGraph()
+    graph.add_edge(1, 2, sum_kzt=100.)
+    graph.add_edge(2, 3, sum_kzt=50.)
+    nodes = pd.DataFrame({'gid': [1,2,3], 'cluster_id': [0,0,0],
+        'is_seed': [False,False,False], 'role': ['distributor','consolidator','terminal'],
+        'priority_score': [.9,.8,.3]})
+    text = summarize_clusters(graph,nodes).hypothesis.iloc[0]
+    assert '66.7%' in text and 'распределение внутри' in text and 'сбор внутри' in text
+    assert 'Основания:' in text and 'Ограничение:' in text and 'Следующий шаг:' in text
+    nodes['role'] = 'peripheral'
+    assert 'назначение группы' in summarize_clusters(graph,nodes).hypothesis.iloc[0]

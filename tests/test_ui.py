@@ -263,3 +263,12 @@ def test_direct_flow_overview_and_navigation(ui_data, monkeypatch):
                            'sum_kzt': [100., 20., 30.], 'n_tx': [1, 1, 1]})
     sides = direct_flows(sample, gid, None)
     assert [count for _, count in sides] == [1, 1]
+
+
+def test_graph_has_no_external_assets(ui_data):
+    import re
+    _, nodes, edges = ui_data
+    gid = int(nodes.gid.iloc[0])
+    html, _ = app.graph_html(edges, nodes, gid, 1)
+    assert not re.search(r'<(?:script|link)\b[^>]*(?:src|href)=["\']https?://', html, re.I)
+    assert 'К выбранному клиенту' in html

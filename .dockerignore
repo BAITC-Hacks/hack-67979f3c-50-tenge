@@ -1,6 +1,7 @@
 *
 !Dockerfile
 !requirements.txt
+!requirements.lock.txt
 !.streamlit/
 !.streamlit/config.toml
 !starter/

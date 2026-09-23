@@ -218,3 +218,11 @@ def test_stability_connected_communities_isolate_and_repeatability():
     pd.testing.assert_frame_equal(baseline, baseline_original)
     assert metrics.gid.dtype == "int64" and set(metrics.gid) == {A, B, C, D, ISOLATE}
     json.dumps(diagnostics, allow_nan=False)
+
+
+def test_daily_svg_zero_and_single_day():
+    from viz.bonus_panels import daily_chart_svg
+    frame = pd.DataFrame({'in_kzt': [0.], 'out_kzt': [0.]}, index=pd.to_datetime(['2026-07-01']))
+    svg = daily_chart_svg(frame)
+    assert '<svg' in svg and '01.07' in svg
+    assert '<script' not in svg and 'nan' not in svg.lower() and 'inf' not in svg.lower()

@@ -44,6 +44,38 @@ DAY_LABELS = {"date": "Дата", "in_tx": "Входящих переводов"
     "amount_kzt": "Повторяющаяся сумма, ₸", "n_tx": "Число переводов", "sum_kzt": "Общая сумма, ₸"}
 
 
+def daily_chart_svg(chart):
+    """Small local SVG plot: no asynchronous dataset lifecycle on client changes."""
+    peak = max(float(chart[["in_kzt", "out_kzt"]].max().max()), 1)
+    width, height, left, top = 900, 260, 90, 25
+    plot_width, plot_height = 780, 185
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+             'role="img" aria-label="Поступления и отправления по дням, тенге" '
+             'style="width:100%;background:#0f192b;border-radius:10px;font:13px sans-serif">']
+    for fraction in (0, .5, 1):
+        y = top + plot_height * (1-fraction)
+        label = f"{peak*fraction:,.0f}".replace(",", " ")
+        parts.append(f'<line x1="{left}" x2="{left+plot_width}" y1="{y}" y2="{y}" stroke="#334155"/>'
+                     f'<text x="{left-8}" y="{y+4}" text-anchor="end" fill="#cbd5e1">{label}</text>')
+    for column, color, label in (("in_kzt", "#60a5fa", "Получено"), ("out_kzt", "#fbbf24", "Отправлено")):
+        points = []
+        for i, (date, row) in enumerate(chart.iterrows()):
+            x = left + plot_width * (i / (len(chart)-1) if len(chart)>1 else .5)
+            y = top + plot_height * (1-float(row[column])/peak)
+            points.append(f"{x},{y}")
+            title = f"{date:%d.%m.%Y}: {label} {float(row[column]):,.2f} ₸".replace(",", " ")
+            parts.append(f'<circle cx="{x}" cy="{y}" r="4" fill="{color}"><title>{title}</title></circle>')
+        coords = " ".join(points)
+        parts.append(f'<polyline points="{coords}" fill="none" stroke="{color}" stroke-width="2"/>')
+    for i in sorted({0, len(chart)//2, len(chart)-1}):
+        x = left + plot_width * (i/(len(chart)-1) if len(chart)>1 else .5)
+        parts.append(f'<text x="{x}" y="232" text-anchor="middle" fill="#cbd5e1">{chart.index[i]:%d.%m}</text>')
+    parts.append('<text x="90" y="16" fill="#cbd5e1">Тенге</text>'
+                 '<text x="330" y="254" fill="#60a5fa">● Получено</text>'
+                 '<text x="480" y="254" fill="#fbbf24">● Отправлено</text></svg>')
+    return "".join(parts)
+
+
 def _render_temporal(report, gid):
     details = report.get("nodes", {}).get(gid)
     st.subheader(f"Активность клиента {gid}")
@@ -55,7 +87,7 @@ def _render_temporal(report, gid):
         chart = pd.DataFrame(daily)[["date", "in_kzt", "out_kzt"]].copy()
         chart["date"] = pd.to_datetime(chart["date"])
         chart = chart.set_index("date").asfreq("D", fill_value=0)
-        st.line_chart(chart.rename(columns={"in_kzt": "Получено, ₸", "out_kzt": "Отправлено, ₸"}))
+        st.markdown(daily_chart_svg(chart), unsafe_allow_html=True)
         st.caption("Нули между активными днями означают отсутствие операций в этой выборке. Другие банки и суммы ниже порога не видны.")
     else:
         st.info("В предоставленных транзакциях операций этого клиента нет.")

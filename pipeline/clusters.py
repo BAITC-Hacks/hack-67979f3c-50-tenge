@@ -139,12 +139,36 @@ def summarize_clusters(G: nx.DiGraph, scored_df: pd.DataFrame) -> pd.DataFrame:
         top_gids = json.dumps([int(gid) for gid in top["gid"].head(5)])
         dominant = sorted(group["role"].value_counts().items(), key=lambda item: (-item[1], item[0]))[:2]
         role_text = "; ".join(f"{ROLE_LABELS[role]}: {count}/{n_nodes}" for role, count in dominant)
+        members = set(group.gid)
+        distributors = set(group.loc[group.role.eq("distributor"), "gid"])
+        collectors = set(group.loc[group.role.eq("consolidator"), "gid"])
+        distribution_amount = sum(float(a["sum_kzt"]) for u, v, a in G.edges(data=True)
+                                  if u in distributors and v in members)
+        collection_amount = sum(float(a["sum_kzt"]) for u, v, a in G.edges(data=True)
+                                if u in members and v in collectors)
+        distribution_share = distribution_amount / internal if internal else 0
+        collection_share = collection_amount / internal if internal else 0
+        terminal_count = int(group.role.eq("terminal").sum())
+        transit_count = int(group.role.eq("transit").sum())
+        patterns = []
+        if distributors and distribution_share >= .5:
+            patterns.append(f"распределение внутри группы: {distribution_share:.1%} внутренней суммы отправлено узлами с признаками распределения")
+        if collectors and collection_share >= .5:
+            patterns.append(f"сбор внутри группы: {collection_share:.1%} внутренней суммы поступило узлам с признаками консолидации")
+        if terminal_count / n_nodes >= .5:
+            patterns.append(f"преобладают получатели без видимого выхода: {terminal_count}/{n_nodes}")
+        if transit_count / n_nodes >= .25:
+            patterns.append(f"заметная доля транзитных профилей: {transit_count}/{n_nodes}")
+        interpretation = "; ".join(patterns) if patterns else "смешанная структура; назначение группы по выбранным критериям не определено"
+        next_step = ("сверить назначения крупных переводов и полную историю сборщиков/распределителей"
+                     if distributors or collectors else "запросить продолжение переводов и полную историю ключевых клиентов")
         hypothesis = (
-            f"Гипотеза по структуре переводов: {role_text}. "
+            f"Гипотеза: {interpretation}. Основания: {role_text}. "
             f"Seed: {n_seed}/{n_nodes} ({100*n_seed/n_nodes:.1f}%). "
             f"Внутри {internal:,.0f} KZT; с другими кластерами: "
             f"вход {incoming:,.0f}, выход {outgoing:,.0f} KZT. "
-            "Связность не доказывает общую деятельность."
+            "Ограничение: роли структурные; общая деятельность и движение тех же денег не доказаны. "
+            f"Следующий шаг: {next_step}."
         )
         if n_nodes == 1 and G.degree(group["gid"].iloc[0]) == 0:
             hypothesis = (

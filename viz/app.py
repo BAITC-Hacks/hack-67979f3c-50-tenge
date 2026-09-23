@@ -3,6 +3,7 @@
 import json
 import colorsys
 import math
+import re
 import sys
 from html import escape
 from pathlib import Path
@@ -251,6 +252,9 @@ def graph_html(edges, roles, gid, hops, color_by="По ролям"):
                        width=1 + 3 * math.sqrt(float(edge.sum_kzt) / max_amount),
                        color={"color": direction_color, "highlight": "#ffffff", "opacity": .75})
     html = graph.generate_html()
+    # PyVis embeds vis-network, but its template also includes optional Bootstrap CDN.
+    html = re.sub(r'<script\b[^>]*\bsrc=["\']https?://[^>]*>.*?</script>', '', html, flags=re.S | re.I)
+    html = re.sub(r'<link\b[^>]*\bhref=["\']https?://[^>]*>', '', html, flags=re.S | re.I)
     style = """<style>html,body{margin:0;background:#0f192b;color:#e5edf8;font-family:system-ui}
     .card{border:0!important;background:#0f192b!important}#mynetwork{border:0!important}
     #graph-tools{display:flex;gap:8px;padding:12px;flex-wrap:wrap}

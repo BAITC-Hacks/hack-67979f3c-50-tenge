@@ -1,9 +1,2 @@
--r starter/requirements.txt
-# pandas 3.0.6 has a set_index overflow with adjacent int64-max gid.
-pandas>=2.3,<3
-# Required by networkx.pagerank.
-scipy>=1.11
-streamlit>=1.40,<2
-pyvis>=0.3.2,<1
-# Tests.
-pytest>=7.4
+# Exact release dependencies; update and verify the lock together.
+-r requirements.lock.txt

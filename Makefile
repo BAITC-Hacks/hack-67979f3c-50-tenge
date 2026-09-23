@@ -12,7 +12,7 @@ VENV_PYTHON := $(VENV)/bin/python
 $(VENV_PYTHON):
 	"$(PYTHON)" -m venv "$(VENV)"
 
-$(VENV)/.requirements-installed: requirements.txt starter/requirements.txt $(VENV_PYTHON)
+$(VENV)/.requirements-installed: requirements.txt requirements.lock.txt starter/requirements.txt $(VENV_PYTHON)
 	"$(VENV_PYTHON)" -m pip install --quiet -r requirements.txt
 	touch "$@"
 

@@ -1,6 +1,7 @@
 """Local analyst dashboard over completed CSV exports."""
 
 import json
+import colorsys
 from pathlib import Path
 
 import pandas as pd
@@ -22,6 +23,13 @@ ROLE_NAMES = {
     "distributor": "Распределение", "terminal": "Конечный получатель",
     "coordinator": "Координация", "peripheral": "Периферия",
 }
+
+
+def cluster_color(cluster_id: int) -> str:
+    """Stable categorical color for a cluster, independent of display order."""
+    hue = (int(cluster_id) * 0.61803398875) % 1
+    red, green, blue = colorsys.hsv_to_rgb(hue, 0.68, 0.82)
+    return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
 
 
 def _stamp(path: Path) -> int:
@@ -78,7 +86,7 @@ def filtered_nodes(roles, selected_roles, selected_clusters, seed_filter):
     return result.sort_values(["priority_score", "gid"], ascending=[False, True]).copy()
 
 
-def graph_html(edges, roles, gid, hops):
+def graph_html(edges, roles, gid, hops, color_mode="Роли"):
     visible, hidden = neighborhood(edges, gid, hops)
     table = roles.set_index("gid")
     graph = Network(height="580px", width="100%", directed=True, cdn_resources="in_line")
@@ -91,13 +99,16 @@ def graph_html(edges, roles, gid, hops):
         seed = bool(node_value(row, "is_seed", False))
         boundary = bool(node_value(row, "truncated_by_depth", False))
         score = float(node_value(row, "priority_score", 0))
+        cluster_id = int(row.cluster_id)
         suffix = " ★" if seed else (" ◇" if boundary else "")
         graph.add_node(str(node_id), label=str(node_id) + suffix,
-                       color=COLORS.get(role, "#64748b"),
+                       color=(cluster_color(cluster_id) if color_mode == "Кластеры"
+                              else COLORS.get(role, "#64748b")),
                        size=13 + 25 * score,
                        borderWidth=4 if node_id == gid else 1,
                        title=f"gid {node_id}<br>{ROLE_NAMES.get(role, role)}<br>"
-                             f"Приоритет: {score:.3f}<br>seed: {seed}; граница: {boundary}")
+                             f"кластер: {cluster_id}<br>Приоритет: {score:.3f}<br>"
+                             f"seed: {seed}; граница: {boundary}")
     subset = edges[edges.src.isin(visible) & edges.dst.isin(visible)]
     for edge in subset.itertuples(index=False):
         title = f"{float(edge.sum_kzt):,.0f} KZT; {int(edge.n_tx)} переводов"
@@ -197,9 +208,11 @@ def main():
         st.dataframe(summary, hide_index=True, use_container_width=True)
 
     hops = st.radio("Окружение", [1, 2], horizontal=True)
-    html, hidden = graph_html(edges, roles, gid, hops)
+    color_mode = st.radio("Цвет узлов", ["Роли", "Кластеры"], horizontal=True)
+    html, hidden = graph_html(edges, roles, gid, hops, color_mode)
     st.caption(f"Стрелка показывает направление перевода; ★ — seed, ◇ — граница. "
-               f"Скрыто узлов из-за лимита 200: {hidden}.")
+               f"Цвет — {'кластер' if color_mode == 'Кластеры' else 'роль'}, "
+               f"размер — приоритет. Скрыто узлов из-за лимита 200: {hidden}.")
     components.html(html, height=600, scrolling=True)
 
 

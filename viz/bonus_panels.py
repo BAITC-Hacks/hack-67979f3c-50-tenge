@@ -113,7 +113,8 @@ def _render_routes(report, gid):
             continue
         options = list(range(len(chosen)))
         index = st.selectbox("Маршрут для разбора" if key == "recurring_routes" else "Цикл для разбора",
-            options, format_func=lambda i: " → ".join(chosen[i]["gids"] + ([chosen[i]["gids"][0]] if key == "short_cycles" else [])),
+            options, format_func=lambda i, routes=chosen, cycle=(key == "short_cycles"): " → ".join(
+                routes[i]["gids"] + ([routes[i]["gids"][0]] if cycle else [])),
             key=f"bonus_{key}_select")
         item = chosen[index]
         st.write(item.get("why", ""))
